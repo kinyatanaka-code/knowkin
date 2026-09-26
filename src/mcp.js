@@ -19,7 +19,7 @@ const unitSchema = z.object({
   same_as: z.number().int().nullable().optional().describe('既存の記憶と同じ内容ならそのid'),
 });
 
-export function buildMcpServer() {
+export function buildMcpServer(uid) {
   const server = new McpServer({ name: 'knowkin', version: '1.0.0' });
 
   server.registerTool('get_core', {
@@ -29,9 +29,9 @@ export function buildMcpServer() {
       + 'ユーザーから仕事の相談、判断の相談、文章や提案書の作成・レビュー、タスクの整理などを頼まれたら、答える前にまずこれを呼び、本人の前提と上司のフィードバックをふまえて答えること。',
     annotations: { readOnlyHint: true },
   }, async () => {
-    const n = await countUnclassified();
+    const n = await countUnclassified(uid);
     const note = n ? `\n\n（未整理のメモが${n}件あります。回答のあとで「knowkinの未整理メモを整理しますか？」と一言たずねてよい）` : '';
-    return text(coreText(await getCore(), await getOpenTasks()) + note);
+    return text(coreText(await getCore(uid), await getOpenTasks(uid)) + note);
   });
 
   server.registerTool('get_current_tasks', {
@@ -39,7 +39,7 @@ export function buildMcpServer() {
     description: 'ユーザー本人の未完了のタスクと目標を期限順に返す。「今やること」「優先順位」「スケジュール」の相談で使う。',
     annotations: { readOnlyHint: true },
   }, async () => {
-    const tasks = await getOpenTasks();
+    const tasks = await getOpenTasks(uid);
     return text(tasks.length ? tasks.map(unitLine).join('\n') : '未完了のタスクはありません。');
   });
 
@@ -56,7 +56,7 @@ export function buildMcpServer() {
     },
     annotations: { readOnlyHint: true },
   }, async (args) => {
-    const rows = await searchUnits(args);
+    const rows = await searchUnits(uid, args);
     return text(rows.length ? rows.map(unitLine).join('\n') : '該当する記憶はありません。');
   });
 
@@ -66,7 +66,7 @@ export function buildMcpServer() {
     inputSchema: { limit: z.number().int().min(1).max(20).optional(), full: z.boolean().optional() },
     annotations: { readOnlyHint: true },
   }, async ({ limit, full }) => {
-    const rows = await getRecentRecordings(limit || 5);
+    const rows = await getRecentRecordings(uid, limit || 5);
     if (!rows.length) return text('録音はまだありません。');
     return text(rows.map((r) => [`# ${r.title}（${r.recorded_at} / メモ ${r.id}）`, ...r.summary.map((s) => `- ${s}`),
       ...(full ? ['', '## 文字起こし', r.text] : [])].join('\n')).join('\n\n'));
@@ -78,7 +78,7 @@ export function buildMcpServer() {
     inputSchema: { name: z.string().describe('人物名（名字だけでも可）') },
     annotations: { readOnlyHint: true },
   }, async ({ name }) => {
-    const { profile, units } = await getPerson(name);
+    const { profile, units } = await getPerson(uid, name);
     const L = [];
     if (profile) L.push(`# ${profile.name}`, ...profile.points.map((p) => `- ${p}`), '');
     L.push('## 関連する記憶', units.length ? units.map(unitLine).join('\n') : 'なし');
@@ -97,7 +97,7 @@ export function buildMcpServer() {
       units: z.array(unitSchema).optional().describe('自分で分類した記憶ユニット'),
     },
   }, async ({ text: t, units }) => {
-    const r = await addMemo(t, 'claude', units || null);
+    const r = await addMemo(uid, t, 'claude', units || null);
     if (r.error) return text(r.error);
     if (r.pending) return text(`原本をメモ ${r.memo_id} として保存しました（未整理）。units を付けて保存し直すか、get_unclassified_memos → save_units で整理してください。`);
     return text(`${r.added}件の記憶を残しました${r.repeated ? `（${r.repeated}件は既存の記憶と同じ内容だったので重みを上げました）` : ''}。`);
@@ -110,9 +110,9 @@ export function buildMcpServer() {
       + 'ユーザーが「knowkinを整理して」「未整理メモを整理して」と頼んだら呼び、各メモを分類して save_units で1メモずつ保存すること。',
     annotations: { readOnlyHint: true },
   }, async () => {
-    const memos = await getUnclassified(20);
+    const memos = await getUnclassified(uid, 20);
     if (!memos.length) return text('未整理のメモはありません。');
-    const existing = await getDedupList();
+    const existing = await getDedupList(uid);
     return text(`今日は ${todayJST()}。次のメモを分類し、メモごとに save_units を呼んでください。
 
 ${CLASSIFY_RULES}
@@ -132,7 +132,7 @@ ${JSON.stringify(existing)}`);
       units: z.array(unitSchema).describe('分類した記憶ユニット'),
     },
   }, async ({ memo_id: memoId, units }) => {
-    const r = await saveUnitsForMemo(memoId, units);
+    const r = await saveUnitsForMemo(uid, memoId, units);
     return text(`メモ ${memoId}：${r.added}件を追加${r.repeated ? `、${r.repeated}件は既存の記憶の重みを上げました` : ''}。`);
   });
 
@@ -143,7 +143,7 @@ ${JSON.stringify(existing)}`);
       + 'それを読んで本人の考え方の核をまとめ、save_core で保存すること。',
     annotations: { readOnlyHint: true },
   }, async () => {
-    const rows = await getCoreMaterial();
+    const rows = await getCoreMaterial(uid);
     if (rows.length < 3) return text('まだ材料が少ないため、核は育てられません（教訓・判断・価値観などが3つ以上必要です）。');
     return text(`次の記憶ユニットを読み直し、この人の考え方の核をまとめて save_core で保存してください（count は繰り返された回数、importance は重要度）。
 
@@ -166,7 +166,7 @@ ${JSON.stringify(rows)}`);
       open_questions: z.array(z.string()).describe('まだ答えが出ていないこと'),
     },
   }, async (args) => {
-    await saveCore(args);
+    await saveCore(uid, args);
     return text('核を保存しました。');
   });
 
@@ -179,7 +179,7 @@ ${JSON.stringify(rows)}`);
       due: z.string().nullable().optional().describe('新しい期限 YYYY-MM-DD（消すなら null）'),
     },
   }, async ({ id, done, due }) => {
-    const u = await updateUnit(id, { done, due });
+    const u = await updateUnit(uid, id, { done, due });
     return text(u ? `更新しました：${unitLine(u)}` : 'そのidのタスクは見つかりませんでした。');
   });
 

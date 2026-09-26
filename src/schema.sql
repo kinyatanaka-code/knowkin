@@ -1,3 +1,18 @@
+CREATE TABLE IF NOT EXISTS users (
+  id            SERIAL PRIMARY KEY,
+  email         TEXT NOT NULL UNIQUE,
+  name          TEXT NOT NULL DEFAULT '',
+  password_hash TEXT NOT NULL,
+  link_token    TEXT NOT NULL UNIQUE,                 -- コネクタURL・ショートカット用の連携キー
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  token_hash  TEXT PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at  TIMESTAMPTZ NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS memos (
   id          SERIAL PRIMARY KEY,
   source      TEXT NOT NULL DEFAULT 'text',          -- text / voice / claude
@@ -35,4 +50,16 @@ CREATE TABLE IF NOT EXISTS core (
   data        JSONB NOT NULL,
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
   CHECK (id = 1)
+);
+
+-- アカウントごとにデータを分ける
+ALTER TABLE memos ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE units ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+CREATE INDEX IF NOT EXISTS memos_user_idx ON memos(user_id);
+CREATE INDEX IF NOT EXISTS units_user_idx ON units(user_id);
+
+CREATE TABLE IF NOT EXISTS cores (
+  user_id     INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  data        JSONB NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );

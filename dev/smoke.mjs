@@ -31,6 +31,11 @@ for (const tag of ['div', 'section', 'nav', 'ul', 'button', 'script', 'style']) 
   if (open === close) ok(`タグ <${tag}> ${open}組`); else ng(`タグ <${tag}> 開き${open} 閉じ${close}`);
 }
 
+// 2a. <head> の中にタグ以外の文字が漏れていないか（画面の上に謎の文字が出るのを防ぐ）
+const head = (html.match(/<head>([\s\S]*?)<\/head>/) || [,''])[1]
+  .replace(/<style>[\s\S]*?<\/style>/g, '').replace(/<title>[\s\S]*?<\/title>/g, '').replace(/<[^>]+>/g, '').trim();
+if (head) ng(`<head> にタグ以外の文字があります：${head.slice(0, 60)}`); else ok('<head> の中身');
+
 // 2b. スクリプトが参照する id が画面に存在するか（画面が真っ白・null エラーの防止）
 const ids = new Set([...html.matchAll(/id="([\w-]+)"/g)].map((m) => m[1]));
 const refs = new Set(scripts.flatMap((s) => [...s.matchAll(/\$\('([\w-]+)'\)/g)].map((m) => m[1])));
@@ -41,7 +46,7 @@ if (missingIds.length) ng(`画面に存在しない id を参照しています�
 try {
   process.env.DATABASE_URL ||= 'postgresql://smoke:smoke@localhost:1/smoke';
   const { buildMcpServer } = await import(path.join(root, 'src/mcp.js'));
-  const server = buildMcpServer();
+  const server = buildMcpServer(1);
   const tools = Object.keys(server._registeredTools || {});
   const expected = ['get_core', 'get_current_tasks', 'search_memory', 'get_person', 'add_memo',
     'get_unclassified_memos', 'save_units', 'get_core_material', 'save_core', 'update_task', 'get_recent_recordings'];

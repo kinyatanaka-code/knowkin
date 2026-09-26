@@ -7,7 +7,7 @@
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon-32.png" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-<meta name="theme-color" content="#050A1C"><text y=%22.9em%22 font-size=%2290%22>🧠</text></svg>">
+<meta name="theme-color" content="#050A1C">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
@@ -23,6 +23,7 @@
 :root[data-theme="dark"]{--bg:#050A1C}
 html{scroll-padding-top:env(safe-area-inset-top,0px);background:var(--bg)}
 *,*::before,*::after{box-sizing:inherit}
+[hidden]{display:none!important}
 body{margin:0;min-height:100vh;color:var(--ink);font-family:"Zen Kaku Gothic New",-apple-system,"Hiragino Sans","Noto Sans JP",system-ui,sans-serif;font-size:16px;line-height:1.7;
   background:radial-gradient(1200px 700px at 50% 0%,#12235A 0%,var(--bg) 60%) fixed,var(--bg)}
 button,select,textarea,input{font:inherit;color:inherit}
@@ -126,6 +127,17 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
 .copybox{width:100%;min-height:160px;margin-top:10px;border:1px solid var(--line);border-radius:10px;background:var(--surface2);padding:10px;font-size:13px}
 .notice{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;color:var(--muted);margin-top:20px}
 .sr{position:absolute;left:-9999px}
+.auth{max-width:440px;margin:24px auto 0}
+.auth-tabs{display:flex;gap:4px;margin:0 0 12px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px}
+.auth-tabs button{flex:1;border:0;background:none;border-radius:9px;padding:8px;color:var(--muted);font-weight:700}
+.auth-tabs button[aria-selected="true"]{background:var(--surface2);color:var(--ink)}
+.field{display:block;margin:0 0 14px}
+.field span{display:block;font-size:13px;color:var(--muted);margin:0 0 4px}
+.field input{width:100%;padding:11px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg2)}
+.hint{font-size:13px;color:var(--muted);margin:-8px 0 12px}
+.primary.wide{width:100%;padding:12px}
+.copyrow{display:flex;gap:8px;align-items:center;margin:4px 0 14px}
+.copyrow input{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg2);font-size:13px}
 @media (prefers-reduced-motion:reduce){.node{transition:none}}
 </style>
 </head>
@@ -137,12 +149,22 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
   </div>
   <p class="tagline">脳筋でも大丈夫。覚えるのは、こっちでやる。</p>
 
-  <div id="login" class="notice" hidden>
-    <p style="margin:0 0 10px;color:var(--ink)">ログイン用のトークン（APP_TOKEN）を入力してください。</p>
-    <input id="tokenInput" class="search" type="password" autocomplete="current-password" aria-label="トークン">
-    <div class="actions" style="justify-content:flex-start"><button class="primary" type="button" id="loginBtn">ログイン</button></div>
-    <p class="status err" id="loginErr"></p>
-  </div>
+  <section id="login" class="auth" hidden>
+    <div class="auth-tabs" role="tablist">
+      <button type="button" role="tab" data-auth="login" aria-selected="true">ログイン</button>
+      <button type="button" role="tab" data-auth="signup" aria-selected="false">アカウントを作る</button>
+    </div>
+    <div class="sheet">
+      <label class="field" id="f-name" hidden><span>名前</span><input id="a-name" type="text" autocomplete="name"></label>
+      <label class="field"><span>メールアドレス</span><input id="a-email" type="email" autocomplete="email" inputmode="email"></label>
+      <label class="field"><span>パスワード</span><input id="a-pass" type="password" autocomplete="current-password"></label>
+      <p class="hint" id="a-passhint" hidden>8文字以上</p>
+      <label class="field" id="f-code" hidden><span>招待コード</span><input id="a-code" type="text" autocomplete="off"></label>
+      <div class="actions" style="justify-content:stretch"><button class="primary wide" type="button" id="authBtn">ログイン</button></div>
+      <p class="status err" id="authErr"></p>
+      <p class="hint" id="authNote"></p>
+    </div>
+  </section>
 
   <main id="app" hidden>
     <div class="space">
@@ -160,21 +182,44 @@ const TYPES={event:{label:'記憶',layer:'event'},input:{label:'インプット'
 const LAYERS=[{id:'event',label:'出来事'},{id:'know',label:'知識'},{id:'think',label:'思考'},{id:'act',label:'行動'},{id:'rel',label:'関係'}];
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-let token='';try{token=localStorage.getItem('knowkin_token')||'';}catch(_){}
 let state={units:[],failed:[],core:null,recordings:[]};
 const ui={view:'rec',layer:null,q:'',armed:null,result:null};
 let busy=false;
 
 function setStatus(t,err=false){const s=$('status');s.textContent=t;s.classList.toggle('err',err);}
 async function api(path,opts={}){
-  const headers={'Authorization':'Bearer '+token,...(opts.body instanceof FormData?{}:{'Content-Type':'application/json'}),...(opts.headers||{})};
-  const r=await fetch(path,{...opts,headers});
-  if(r.status===401){showLogin('トークンが違います。もう一度入力してください。');throw new Error('unauthorized');}
+  const headers={...(opts.body instanceof FormData?{}:{'Content-Type':'application/json'}),...(opts.headers||{})};
+  const r=await fetch(path,{...opts,headers,credentials:'same-origin'});
+  if(r.status===401&&!path.startsWith('/api/auth/')){showLogin('ログインが切れました。もう一度ログインしてください。');throw new Error('unauthorized');}
   const body=(r.headers.get('content-type')||'').includes('json')?await r.json():await r.text();
   if(!r.ok)throw new Error((body&&body.error)||'通信に失敗しました');
   return body;
 }
-function showLogin(msg=''){$('login').hidden=false;$('app').hidden=true;$('loginErr').textContent=msg;$('tokenInput').focus();}
+let authMode='login',signup={open:true,needCode:false};
+function setAuthMode(m){
+  authMode=m;const s=m==='signup';
+  document.querySelectorAll('[data-auth]').forEach(b=>b.setAttribute('aria-selected',b.dataset.auth===m));
+  $('f-name').hidden=!s;$('a-passhint').hidden=!s;$('f-code').hidden=!(s&&signup.needCode);
+  $('a-pass').autocomplete=s?'new-password':'current-password';
+  $('authBtn').textContent=s?'アカウントを作ってはじめる':'ログイン';$('authBtn').disabled=s&&!signup.open;
+  $('authNote').textContent=s?(signup.open?(signup.needCode?'アカウントを作るには招待コードが必要です。':'最初のアカウントです。これまでに残した記憶は、このアカウントに引き継がれます。'):'いまは新しいアカウントを作れません。'):'';
+  $('authErr').textContent='';
+}
+function showLogin(msg=''){$('login').hidden=false;$('app').hidden=true;setAuthMode(authMode);$('authErr').textContent=msg;}
+async function submitAuth(){
+  const body={email:$('a-email').value,password:$('a-pass').value,name:$('a-name').value,code:$('a-code').value};
+  if(!body.email||!body.password){$('authErr').textContent='メールアドレスとパスワードを入力してください。';return;}
+  $('authBtn').disabled=true;
+  try{await api('/api/auth/'+(authMode==='signup'?'signup':'login'),{method:'POST',body:JSON.stringify(body)});$('a-pass').value='';await load();}
+  catch(e){$('authErr').textContent=e.message;}
+  $('authBtn').disabled=false;
+}
+async function boot(){
+  try{const s=await api('/api/auth/status');signup=s.signup||signup;
+    if(s.user){await load();return;}
+    authMode=signup.open&&!signup.needCode?'signup':'login';showLogin();}
+  catch(e){showLogin('サーバーに接続できませんでした。');}
+}
 async function load(){
   try{state=await api('/api/state');$('login').hidden=true;$('app').hidden=false;render();}
   catch(e){if(e.message!=='unauthorized'){$('app').hidden=false;$('login').hidden=true;render();setStatus('読み込みに失敗しました：'+e.message,true);}}
@@ -211,7 +256,8 @@ function renderMap(){
   layoutNet();
   const review=units.filter(u=>!u.reviewed).length+(state.failed||[]).length;
   $('magnets').innerHTML=`<button type="button" class="magnet" data-view="review" aria-pressed="${ui.view==='review'}">見直し${review?`<span class="n">${review}</span>`:''}</button>
-    <button type="button" class="magnet" data-view="core" aria-pressed="${ui.view==='core'}">核${state.core?'':'<span class="n">まだ</span>'}</button>`;
+    <button type="button" class="magnet" data-view="core" aria-pressed="${ui.view==='core'}">核${state.core?'':'<span class="n">まだ</span>'}</button>
+    <button type="button" class="magnet" data-view="account" aria-pressed="${ui.view==='account'}">${esc((state.user&&state.user.name)||'アカウント')}</button>`;
   const d=new Date();$('today').textContent=`${d.getMonth()+1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）`;
 }
 
@@ -415,10 +461,33 @@ function renderCore(p){
     ((core.people||[]).length?`<h4>よく関わる人</h4><ul>${core.people.map(x=>`<li><strong>${esc(x.name)}</strong>：${esc((x.points||[]).join('／'))}</li>`).join('')}</ul>`:'')+sec('まだ答えが出ていないこと',core.open_questions)+
     `<div class="meta" style="margin-top:14px"><span>最終更新 ${esc(String(core.updatedAt||'').slice(0,10))}</span><span>${state.aiEnabled?'毎日3時にも自動で育て直します':'Claudeとの会話で「knowkinの核を育てて」と頼むと更新されます'}</span></div></div>`;
   else html+=`<p class="empty">核は、貯まった記憶からあなたの考え方をまとめたものです。教訓・判断・価値観などが3つ以上たまったら${state.aiEnabled?'育てられます':'、Claudeとの会話で「knowkinの核を育てて」と頼んでください'}。</p>`;
-  html+=`<div class="actions" style="justify-content:flex-start;margin-top:16px">${state.aiEnabled?'<button class="primary" id="grow">核を育てる</button>':''}<button class="ghost" id="copy">Claudeに渡す文章を作る</button><button class="ghost" id="logout">ログアウト</button></div><div id="copyarea"></div>`;
+  html+=`<div class="actions" style="justify-content:flex-start;margin-top:16px">${state.aiEnabled?'<button class="primary" id="grow">核を育てる</button>':''}<button class="ghost" id="copy">Claudeに渡す文章を作る</button></div><div id="copyarea"></div>`;
   p.innerHTML=html;
 }
-const PANELS={rec:renderRec,layer:renderLayer,review:renderReview,core:renderCore};
+async function renderAccount(p){
+  p.innerHTML=`<h2>アカウント</h2><p class="lead">読み込んでいます…</p>`;
+  try{ui.account=ui.account||await api('/api/account');}catch(e){if(e.message!=='unauthorized')p.innerHTML=`<h2>アカウント</h2><p class="status err">${esc(e.message)}</p>`;return;}
+  const a=ui.account;if(ui.view!=='account')return;
+  p.innerHTML=`<h2>アカウント</h2><p class="lead">${esc(a.user.name)}（${esc(a.user.email)}）</p>
+  <div class="sheet">
+    <h4 style="margin-top:0">Claude.aiのコネクタURL</h4>
+    <p class="hint" style="margin:0 0 6px">Claude.aiのコネクタ設定で、カスタムコネクタとしてこのURLを登録します。パスワードと同じなので人に見せないでください。</p>
+    <div class="copyrow"><input id="acc-mcp" readonly value="${esc(a.mcpUrl)}" aria-label="コネクタURL"><button class="ghost" data-copy="acc-mcp">コピー</button></div>
+    <h4>iPhoneショートカット用</h4>
+    <p class="hint" style="margin:0 0 6px">「URLの内容を取得」で、URLに下のアドレス、ヘッダ Authorization に「Bearer 連携キー」を入れ、フォームの file に録音を付けて送ります。</p>
+    <div class="copyrow"><input id="acc-voice" readonly value="${esc(a.voiceUrl)}" aria-label="送信先URL"><button class="ghost" data-copy="acc-voice">コピー</button></div>
+    <div class="copyrow"><input id="acc-key" readonly value="Bearer ${esc(a.key)}" aria-label="Authorization"><button class="ghost" data-copy="acc-key">コピー</button></div>
+    <div class="actions" style="justify-content:flex-start"><button class="ghost" id="rotate">連携キーを作り直す</button></div>
+  </div>
+  <h4>パスワードを変える</h4>
+  <div class="sheet">
+    <label class="field"><span>今のパスワード</span><input id="pw-cur" type="password" autocomplete="current-password"></label>
+    <label class="field"><span>新しいパスワード（8文字以上）</span><input id="pw-new" type="password" autocomplete="new-password"></label>
+    <div class="actions" style="justify-content:flex-start"><button class="primary" id="pwBtn">変更する</button></div>
+  </div>
+  <div class="actions" style="justify-content:flex-start;margin-top:18px"><button class="ghost" id="logout">ログアウト</button></div>`;
+}
+const PANELS={rec:renderRec,layer:renderLayer,review:renderReview,core:renderCore,account:renderAccount};
 function render(){renderMap();(PANELS[ui.view]||renderRec)($('panel'));}
 
 // ---- 操作 ----
@@ -427,8 +496,13 @@ const localUnit=id=>state.units.find(u=>u.id===Number(id));
 document.addEventListener('click',async e=>{
   const t=e.target.closest('button,input[type=checkbox]');if(!t)return;
   try{
-    if(t.id==='loginBtn'){token=$('tokenInput').value.trim();try{localStorage.setItem('knowkin_token',token);}catch(_){}load();return;}
-    if(t.id==='logout'){token='';try{localStorage.removeItem('knowkin_token');}catch(_){}showLogin();return;}
+    if(t.dataset.auth){setAuthMode(t.dataset.auth);return;}
+    if(t.id==='authBtn'){submitAuth();return;}
+    if(t.id==='logout'){await api('/api/auth/logout',{method:'POST'});state={units:[],failed:[],core:null,recordings:[]};ui.view='rec';authMode='login';showLogin();return;}
+    if(t.id==='rotate'){if(ui.armed!=='rotate'){ui.armed='rotate';t.textContent='もう一度押すと作り直します（今のURLは使えなくなります）';t.classList.add('on');return;}
+      ui.armed=null;await api('/api/account/rotate',{method:'POST'});ui.account=null;setStatus('連携キーを作り直しました。Claude.aiのコネクタURLも新しいものに変えてください。');render();return;}
+    if(t.dataset.copy){const i=$(t.dataset.copy);i.select();try{await navigator.clipboard.writeText(i.value);t.textContent='コピーしました';setTimeout(()=>{t.textContent='コピー';},1500);}catch(_){}return;}
+    if(t.id==='pwBtn'){try{await api('/api/account/password',{method:'POST',body:JSON.stringify({current:$('pw-cur').value,next:$('pw-new').value})});authMode='login';showLogin('パスワードを変えました。新しいパスワードでログインしてください。');}catch(err){setStatus(err.message,true);}return;}
     if(t.dataset.view||t.dataset.node){
       if(recorder&&recorder.state==='recording'){setStatus('録音中です。止めてから切り替えてください。',true);return;}
       if(t.dataset.node){if(ui.layer!==t.dataset.node)ui.q='';ui.view='layer';ui.layer=t.dataset.node;}else ui.view=t.dataset.view;
@@ -454,8 +528,8 @@ document.addEventListener('change',async e=>{
   const s=e.target;if(!s.dataset||!s.dataset.retype)return;const u=localUnit(s.dataset.retype);u.type=s.value;render();
   try{await patch(u.id,{type:s.value});}catch(err){setStatus('種類の変更に失敗しました：'+err.message,true);}
 });
-$('tokenInput').addEventListener('keydown',e=>{if(e.key==='Enter')$('loginBtn').click();});
-if(token)load();else showLogin();
+['a-email','a-pass','a-name','a-code'].forEach(id=>$(id).addEventListener('keydown',e=>{if(e.key==='Enter')submitAuth();}));
+boot();
 </script>
 </body>
 </html>

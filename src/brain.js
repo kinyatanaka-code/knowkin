@@ -77,8 +77,8 @@ ${text}
 {"units":[{"type":"lesson","content":"","quote":"","reason":"","people":[],"tags":[],"due":null,"importance":2,"same_as":null}]}`;
 }
 
-export async function addMemo(text, source = 'text', units = null) {
-  const { rows } = await pool.query('INSERT INTO memos(text, source) VALUES($1, $2) RETURNING *', [text, source]);
+export async function addMemo(uid, text, source = 'text', units = null) {
+  const { rows } = await pool.query('INSERT INTO memos(user_id, text, source) VALUES($1, $2, $3) RETURNING *', [uid, text, source]);
   const memo = rows[0];
   if (Array.isArray(units) && units.length) return { memo_id: memo.id, ...(await applyUnits(memo, units)) };
   if (!aiEnabled) return { memo_id: memo.id, added: 0, repeated: 0, pending: true };
@@ -90,32 +90,32 @@ export async function addMemo(text, source = 'text', units = null) {
   }
 }
 
-export async function classifyMemoById(id) {
+export async function classifyMemoById(uid, id) {
   if (!aiEnabled) throw new Error('AIなしモードです。Claudeとの会話で「knowkinの未整理メモを整理して」と頼んでください');
-  const { rows } = await pool.query('SELECT * FROM memos WHERE id = $1', [id]);
+  const { rows } = await pool.query('SELECT * FROM memos WHERE id = $1 AND user_id = $2', [id, uid]);
   if (!rows[0]) throw new Error('メモが見つかりません');
   return classifyMemo(rows[0]);
 }
 
 /** 重複判定用の既存の記憶 */
-export async function getDedupList() {
+export async function getDedupList(uid) {
   return (await pool.query(
     `SELECT id, type, left(content, 90) AS content FROM units
-     WHERE type = ANY($1) ORDER BY created_at DESC LIMIT 80`,
-    [['lesson', 'value', 'decision', 'person', 'idea', 'goal', 'question', 'input']],
+     WHERE user_id = $2 AND type = ANY($1) ORDER BY created_at DESC LIMIT 80`,
+    [['lesson', 'value', 'decision', 'person', 'idea', 'goal', 'question', 'input'], uid],
   )).rows;
 }
 
 async function classifyMemo(memo) {
-  const existing = await getDedupList();
+  const existing = await getDedupList(memo.user_id);
   const res = await askJSON(classifyPrompt(memo.text, todayJST(), existing));
   return applyUnits(memo, Array.isArray(res.units) ? res.units : []);
 }
 
 /** 録音・ボイスメモを文字起こし・要約し、記憶ユニットに分けて保存する */
-export async function addVoice(buffer, filename, mimetype) {
+export async function addVoice(uid, buffer, filename, mimetype) {
   if (canSummarizeAudio) {
-    const existing = await getDedupList();
+    const existing = await getDedupList(uid);
     const r = await askAudioJSON(buffer, `あなたは「knowkin」という、ある一人の人のための第二の脳の整理係です。
 この録音は、本人の対面での会話、上司からのフィードバック、会議、または本人のひとり言のボイスメモです。今日は ${todayJST()} です。
 録音を聞いて、次の4つを作ってください。
@@ -135,8 +135,8 @@ ${JSON.stringify(existing)}
 {"title":"","summary":[],"transcript":"","units":[{"type":"lesson","content":"","quote":"","reason":"","people":[],"tags":[],"due":null,"importance":2,"same_as":null}]}`);
     const units = Array.isArray(r.units) ? r.units : [];
     const { rows } = await pool.query(
-      `INSERT INTO memos(text, source, title, summary) VALUES($1, 'voice', $2, $3) RETURNING *`,
-      [String(r.transcript || '（文字起こしなし）'), String(r.title || '録音'), strArr(r.summary)],
+      `INSERT INTO memos(user_id, text, source, title, summary) VALUES($4, $1, 'voice', $2, $3) RETURNING *`,
+      [String(r.transcript || '（文字起こしなし）'), String(r.title || '録音'), strArr(r.summary), uid],
     );
     const saved = await applyUnits(rows[0], units);
     return {
@@ -148,35 +148,35 @@ ${JSON.stringify(existing)}
   if (canTranscribe) {
     const text = await transcribe(buffer, filename, mimetype);
     if (!text) throw new Error('音声から文字を読み取れませんでした');
-    const r = await addMemo(text, 'voice');
+    const r = await addMemo(uid, text, 'voice');
     return { ...r, title: '録音', summary: [], transcript: text, units: [] };
   }
   throw new Error('録音を扱うには GEMINI_API_KEY の設定が必要です');
 }
 
-export async function getRecentRecordings(limit = 10) {
+export async function getRecentRecordings(uid, limit = 10) {
   const { rows } = await pool.query(
     `SELECT id, title, summary, text, to_char(recorded_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS recorded_at
-     FROM memos WHERE source = 'voice' ORDER BY recorded_at DESC LIMIT $1`, [limit]);
+     FROM memos WHERE user_id = $2 AND source = 'voice' ORDER BY recorded_at DESC LIMIT $1`, [limit, uid]);
   return rows;
 }
 
 /** 未整理のメモ（Claudeとの会話で整理する用） */
-export async function getUnclassified(limit = 20) {
+export async function getUnclassified(uid, limit = 20) {
   const { rows } = await pool.query(
     `SELECT id, text, source, to_char(recorded_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS recorded_at
-     FROM memos WHERE NOT classified ORDER BY recorded_at ASC LIMIT $1`, [limit]);
+     FROM memos WHERE user_id = $2 AND NOT classified ORDER BY recorded_at ASC LIMIT $1`, [limit, uid]);
   return rows;
 }
 
-export async function countUnclassified() {
-  const { rows } = await pool.query('SELECT count(*)::int AS n FROM memos WHERE NOT classified');
+export async function countUnclassified(uid) {
+  const { rows } = await pool.query('SELECT count(*)::int AS n FROM memos WHERE user_id = $1 AND NOT classified', [uid]);
   return rows[0].n;
 }
 
 /** 分類済みのユニットを、指定のメモの記憶として保存する */
-export async function saveUnitsForMemo(memoId, units) {
-  const { rows } = await pool.query('SELECT * FROM memos WHERE id = $1', [memoId]);
+export async function saveUnitsForMemo(uid, memoId, units) {
+  const { rows } = await pool.query('SELECT * FROM memos WHERE id = $1 AND user_id = $2', [memoId, uid]);
   if (!rows[0]) throw new Error(`メモ ${memoId} が見つかりません`);
   if (rows[0].classified) throw new Error(`メモ ${memoId} はすでに整理済みです`);
   return applyUnits(rows[0], units);
@@ -200,16 +200,16 @@ async function applyUnits(memo, list) {
              dates = array_append(dates, $2::date),
              importance = LEAST(3, GREATEST(importance, $3) + CASE WHEN count + 1 >= 3 THEN 1 ELSE 0 END),
              quote = CASE WHEN quote = '' THEN $4 ELSE quote END
-           WHERE id = $1`,
-          [sameId, today, imp(r.importance), String(r.quote || '')],
+           WHERE id = $1 AND user_id = $5`,
+          [sameId, today, imp(r.importance), String(r.quote || ''), memo.user_id],
         );
         if (hit.rowCount) { repeated++; continue; }
       }
       await client.query(
-        `INSERT INTO units(memo_id, type, content, quote, reason, people, tags, due, importance, dates)
-         VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::date])`,
+        `INSERT INTO units(user_id, memo_id, type, content, quote, reason, people, tags, due, importance, dates)
+         VALUES($11, $1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::date])`,
         [memo.id, type, String(r.content), String(r.quote || ''), String(r.reason || ''),
-          strArr(r.people), strArr(r.tags), validDate(r.due), imp(r.importance), today],
+          strArr(r.people), strArr(r.tags), validDate(r.due), imp(r.importance), today, memo.user_id],
       );
       added++;
     }
@@ -225,16 +225,16 @@ async function applyUnits(memo, list) {
 }
 
 /** 核を作るための材料 */
-export async function getCoreMaterial() {
+export async function getCoreMaterial(uid) {
   const { rows } = await pool.query(
     `SELECT type, content, quote, reason, people, count, importance FROM units
-     WHERE type = ANY($1) ORDER BY count DESC, importance DESC, created_at DESC LIMIT 300`,
-    [['lesson', 'value', 'decision', 'person', 'goal', 'question', 'idea']],
+     WHERE user_id = $2 AND type = ANY($1) ORDER BY count DESC, importance DESC, created_at DESC LIMIT 300`,
+    [['lesson', 'value', 'decision', 'person', 'goal', 'question', 'idea'], uid],
   );
   return rows;
 }
 
-export async function saveCore(r) {
+export async function saveCore(uid, r) {
   const data = {
     summary: String(r.summary || ''),
     values: strArr(r.values),
@@ -245,16 +245,16 @@ export async function saveCore(r) {
     open_questions: strArr(r.open_questions),
   };
   await pool.query(
-    `INSERT INTO core(id, data, updated_at) VALUES(1, $1, now())
-     ON CONFLICT (id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
-    [data],
+    `INSERT INTO cores(user_id, data, updated_at) VALUES($2, $1, now())
+     ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
+    [data, uid],
   );
   return data;
 }
 
-export async function growCore() {
+export async function growCore(uid) {
   if (!aiEnabled) throw new Error('AIなしモードです。Claudeとの会話で「knowkinの核を育てて」と頼んでください');
-  const rows = await getCoreMaterial();
+  const rows = await getCoreMaterial(uid);
   if (rows.length < 3) return null;
   const r = await askJSON(`あなたは「knowkin」という個人の第二の脳の整理係です。
 以下は本人が残した記憶ユニットです（count は同じ内容が繰り返された回数、importance は重要度）。
@@ -269,37 +269,36 @@ ${JSON.stringify(rows)}
 ## 出力
 次の形のJSONだけを出力してください。
 {"summary":"この人の考え方を1〜2文で","values":[],"decision_rules":[],"lessons":[],"people":[{"name":"","points":[]}],"open_questions":[]}`);
-  return saveCore(r);
+  return saveCore(uid, r);
 }
 
-/** 前回の核の更新以降に新しい記憶があれば育てる（夜間バッチ用） */
-export async function growCoreIfChanged() {
-  if (!aiEnabled) return null;
+/** 前回の核の更新以降に新しい記憶があるユーザーの核を育てる（夜間バッチ用） */
+export async function growCoresIfChanged() {
+  if (!aiEnabled) return 0;
   const { rows } = await pool.query(
-    `SELECT (SELECT updated_at FROM core WHERE id = 1) AS core_at,
-            (SELECT max(created_at) FROM units) AS unit_at`,
-  );
-  const { core_at: coreAt, unit_at: unitAt } = rows[0];
-  if (!unitAt || (coreAt && coreAt >= unitAt)) return null;
-  return growCore();
+    `SELECT u.user_id FROM (SELECT user_id, max(created_at) AS at FROM units WHERE user_id IS NOT NULL GROUP BY user_id) u
+     LEFT JOIN cores c ON c.user_id = u.user_id WHERE c.updated_at IS NULL OR c.updated_at < u.at`);
+  let n = 0;
+  for (const r of rows) { try { if (await growCore(r.user_id)) n++; } catch (e) { console.error('核の更新に失敗', r.user_id, e.message); } }
+  return n;
 }
 
-export async function getCore() {
-  const { rows } = await pool.query('SELECT data, updated_at FROM core WHERE id = 1');
+export async function getCore(uid) {
+  const { rows } = await pool.query('SELECT data, updated_at FROM cores WHERE user_id = $1', [uid]);
   return rows[0] ? { ...rows[0].data, updatedAt: rows[0].updated_at } : null;
 }
 
-export async function getOpenTasks() {
+export async function getOpenTasks(uid) {
   const { rows } = await pool.query(
-    `SELECT ${UNIT_COLS} FROM units WHERE type IN ('task', 'goal') AND NOT done
-     ORDER BY due ASC NULLS LAST, created_at ASC`,
+    `SELECT ${UNIT_COLS} FROM units WHERE user_id = $1 AND type IN ('task', 'goal') AND NOT done
+     ORDER BY due ASC NULLS LAST, created_at ASC`, [uid],
   );
   return rows;
 }
 
-export async function searchUnits({ query = '', type = null, person = null, limit = 20 } = {}) {
-  const where = [];
-  const params = [];
+export async function searchUnits(uid, { query = '', type = null, person = null, limit = 20 } = {}) {
+  const where = ['user_id = $1'];
+  const params = [uid];
   if (query) {
     params.push(`%${query}%`);
     where.push(`(content ILIKE $${params.length} OR quote ILIKE $${params.length} OR reason ILIKE $${params.length}
@@ -316,16 +315,16 @@ export async function searchUnits({ query = '', type = null, person = null, limi
   return rows;
 }
 
-export async function getPerson(name) {
-  const core = await getCore();
+export async function getPerson(uid, name) {
+  const core = await getCore(uid);
   const profile = core?.people?.find((p) => p.name.includes(name) || name.includes(p.name)) || null;
-  const units = await searchUnits({ person: name, limit: 30 });
+  const units = await searchUnits(uid, { person: name, limit: 30 });
   return { profile, units };
 }
 
-export async function updateUnit(id, fields) {
+export async function updateUnit(uid, id, fields) {
   const sets = [];
-  const params = [id];
+  const params = [id, uid];
   if (typeof fields.done === 'boolean') {
     params.push(fields.done); sets.push(`done = $${params.length}`);
     sets.push(`done_at = CASE WHEN $${params.length} THEN now() ELSE NULL END`);
@@ -335,20 +334,20 @@ export async function updateUnit(id, fields) {
   if (typeof fields.content === 'string' && fields.content.trim()) { params.push(fields.content.trim()); sets.push(`content = $${params.length}`); }
   if (fields.due !== undefined) { params.push(validDate(fields.due)); sets.push(`due = $${params.length}`); }
   if (!sets.length) return null;
-  const { rows } = await pool.query(`UPDATE units SET ${sets.join(', ')} WHERE id = $1 RETURNING ${UNIT_COLS}`, params);
+  const { rows } = await pool.query(`UPDATE units SET ${sets.join(', ')} WHERE id = $1 AND user_id = $2 RETURNING ${UNIT_COLS}`, params);
   return rows[0] || null;
 }
 
-export async function deleteUnit(id) {
-  await pool.query('DELETE FROM units WHERE id = $1', [id]);
+export async function deleteUnit(uid, id) {
+  await pool.query('DELETE FROM units WHERE id = $1 AND user_id = $2', [id, uid]);
 }
 
-export async function getState() {
+export async function getState(uid) {
   const [units, failed, core, recordings] = await Promise.all([
-    pool.query(`SELECT ${UNIT_COLS} FROM units ORDER BY created_at DESC LIMIT 2000`),
-    pool.query(`SELECT id, text, recorded_at FROM memos WHERE NOT classified ORDER BY recorded_at DESC LIMIT 50`),
-    getCore(),
-    getRecentRecordings(10),
+    pool.query(`SELECT ${UNIT_COLS} FROM units WHERE user_id = $1 ORDER BY created_at DESC LIMIT 2000`, [uid]),
+    pool.query(`SELECT id, text, recorded_at FROM memos WHERE user_id = $1 AND NOT classified ORDER BY recorded_at DESC LIMIT 50`, [uid]),
+    getCore(uid),
+    getRecentRecordings(uid, 10),
   ]);
   return { units: units.rows, failed: failed.rows, core, recordings, canSummarizeAudio, canTranscribe };
 }

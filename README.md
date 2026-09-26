@@ -38,8 +38,8 @@ public/index.html  Web画面
 | 変数 | 内容 |
 |---|---|
 | `DATABASE_URL` | PostgreSQLの `DATABASE_URL` を参照（`${{Postgres.DATABASE_URL}}`） |
-| `APP_TOKEN` | Web画面とAPIのログイン用。長いランダム文字列 |
-| `MCP_SECRET` | コネクタURLに入れる秘密の文字列。長いランダム文字列 |
+| `SIGNUP_CODE` | 任意。2人目以降がアカウントを作るときの招待コード。未設定なら最初の1人しか作れない |
+| `MCP_SECRET` | 任意。アカウント機能より前に登録したコネクタURLを、最初のアカウントにつなぐための古い設定 |
 | `AI_PROVIDER` | 任意。未設定（`none`）ならAIの利用料ゼロ。サーバー側でも自動分類したいときだけ `gemini` / `openai` / `deepseek` / `anthropic` |
 | 選んだAIのキー | `AI_PROVIDER` を設定した場合のみ。`GEMINI_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` のどれか1つ |
 | `AI_MODEL` | 任意。空なら各社の安いモデル（gemini-2.5-flash / gpt-4.1-mini / deepseek-chat / claude-haiku-4-5） |
@@ -52,6 +52,15 @@ public/index.html  Web画面
 6. `https://<発行されたURL>/` を開き、`APP_TOKEN` でログインできれば完了
 
 テーブルは起動時に自動で作られます。
+
+## アカウント
+
+Web画面でアカウント（メールアドレスとパスワード）を作ってログインします。
+
+- 最初のアカウントは誰でも作れます。これまでに残した記憶は、最初のアカウントに引き継がれます
+- 2人目以降は、`SIGNUP_CODE` を設定したうえで、その招待コードを入力した人だけが作れます
+- 記憶はアカウントごとに分かれ、ほかの人からは見えません
+- コネクタURLとiPhoneショートカット用の連携キーは、画面右下の名前のマグネット（アカウント）から確認・作り直しができます
 
 ## AIなしモード（既定・無料）
 
