@@ -98,3 +98,17 @@ CREATE TABLE IF NOT EXISTS memo_images (
   data        BYTEA NOT NULL,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- 既存の種類に当てはまらない記憶のために、Claudeが自動で作るカテゴリ
+CREATE TABLE IF NOT EXISTS categories (
+  id           SERIAL PRIMARY KEY,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  key          TEXT NOT NULL,                         -- 英小文字の識別子（units.type に入る）
+  label        TEXT NOT NULL,                         -- 表示名
+  description  TEXT NOT NULL DEFAULT '',              -- どんな記憶を入れるか
+  layer        TEXT NOT NULL,                         -- 既存の層（event/know/think/act/rel）か 'new'
+  layer_label  TEXT NOT NULL DEFAULT '',              -- layer が new のときの新しい層の名前
+  reviewed     BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, key)
+);

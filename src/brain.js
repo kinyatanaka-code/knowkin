@@ -18,7 +18,55 @@ export const TYPES = {
 };
 
 export const UNIT_COLS = `id, memo_id, type, content, quote, reason, people, tags, due, importance, count,
-  done, done_at, reviewed, created_at, to_char(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS day`;
+  done, done_at, reviewed, created_at, to_char(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS day,
+  (SELECT c.label FROM categories c WHERE c.user_id = units.user_id AND c.key = units.type) AS type_label`;
+export const LAYER_IDS = ['event', 'know', 'think', 'act', 'rel'];
+
+// ---- 自動で作られるカテゴリ ----
+export async function getCategories(uid) {
+  const { rows } = await pool.query(
+    `SELECT c.*, (SELECT count(*)::int FROM units u WHERE u.user_id = c.user_id AND u.type = c.key) AS unit_count
+     FROM categories c WHERE c.user_id = $1 ORDER BY c.created_at`, [uid]);
+  return rows;
+}
+async function typeKeys(uid) {
+  const { rows } = await pool.query('SELECT key FROM categories WHERE user_id = $1', [uid]);
+  return new Set([...Object.keys(TYPES), ...rows.map((r) => r.key)]);
+}
+export async function createCategory(uid, { key, label, description = '', layer, new_layer_label = '' }) {
+  key = String(key || '').trim().toLowerCase();
+  if (!/^[a-z][a-z0-9_]{1,30}$/.test(key)) throw new Error('key は英小文字で始まる英数字と _（2〜31文字）にしてください');
+  if (TYPES[key]) throw new Error(`${key} は既存の種類です。そのまま type に使ってください`);
+  label = String(label || '').trim().slice(0, 20);
+  if (!label) throw new Error('label（表示名）を入れてください');
+  const isNew = layer === 'new';
+  if (!isNew && !LAYER_IDS.includes(layer)) throw new Error('layer は event / know / think / act / rel / new のどれかにしてください');
+  const layerLabel = isNew ? String(new_layer_label || '').trim().slice(0, 8) : '';
+  if (isNew && !layerLabel) throw new Error('新しい層を作るときは new_layer_label（層の名前）を入れてください');
+  const n = (await pool.query('SELECT count(*)::int AS n FROM categories WHERE user_id = $1', [uid])).rows[0].n;
+  if (n >= 30) throw new Error('カテゴリが多すぎます（30個まで）。既存の種類かカテゴリに入れてください');
+  const { rows } = await pool.query(
+    `INSERT INTO categories(user_id, key, label, description, layer, layer_label) VALUES($1, $2, $3, $4, $5, $6)
+     ON CONFLICT (user_id, key) DO NOTHING RETURNING *`,
+    [uid, key, label, String(description).slice(0, 200), isNew ? 'new' : layer, layerLabel]);
+  if (!rows[0]) throw new Error(`key「${key}」のカテゴリはすでにあります。そのまま type に使ってください`);
+  return rows[0];
+}
+export async function updateCategory(uid, id, { reviewed, label }) {
+  const { rows } = await pool.query(
+    `UPDATE categories SET reviewed = COALESCE($3, reviewed), label = COALESCE(NULLIF($4, ''), label)
+     WHERE id = $1 AND user_id = $2 RETURNING *`, [id, uid, typeof reviewed === 'boolean' ? reviewed : null, label ? String(label).slice(0, 20) : null]);
+  return rows[0] || null;
+}
+/** カテゴリを既存の種類（または別のカテゴリ）にまとめて削除する */
+export async function mergeCategory(uid, id, into) {
+  const { rows } = await pool.query('SELECT * FROM categories WHERE id = $1 AND user_id = $2', [id, uid]);
+  if (!rows[0]) throw new Error('カテゴリが見つかりません');
+  if (!(await typeKeys(uid)).has(into) || into === rows[0].key) throw new Error('まとめ先の種類が正しくありません');
+  await pool.query('UPDATE units SET type = $1 WHERE user_id = $2 AND type = $3', [into, uid, rows[0].key]);
+  await pool.query('DELETE FROM categories WHERE id = $1', [id]);
+  return { ok: true };
+}
 
 export const todayJST = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date());
 
@@ -106,7 +154,7 @@ export async function classifyMemoById(uid, id) {
 export async function getDedupList(uid) {
   return (await pool.query(
     `SELECT id, type, left(content, 90) AS content FROM units
-     WHERE user_id = $2 AND type = ANY($1) ORDER BY created_at DESC LIMIT 80`,
+     WHERE user_id = $2 AND (type = ANY($1) OR type NOT IN ('event', 'task')) ORDER BY created_at DESC LIMIT 80`,
     [['lesson', 'value', 'decision', 'person', 'idea', 'goal', 'question', 'input'], uid],
   )).rows;
 }
@@ -147,7 +195,7 @@ ${JSON.stringify(existing)}
     const saved = await applyUnits(rows[0], units);
     return {
       memo_id: rows[0].id, title: rows[0].title, summary: rows[0].summary, transcript: rows[0].text,
-      units: units.filter((u) => u && u.content).map((u) => ({ type: TYPES[u.type] ? u.type : 'event', content: String(u.content) })),
+      units: units.filter((u) => u && u.content).map((u) => ({ type: TYPES[u.type] ? u.type : 'event', content: String(u.content) })), // 録音の自動要約は既存の種類のみ
       ...saved,
     };
   }
@@ -237,6 +285,7 @@ export async function saveUnitsForMemo(uid, memoId, units, { title = '', summary
 
 async function applyUnits(memo, list) {
   const today = todayJST();
+  const keys = await typeKeys(memo.user_id);
   let added = 0;
   let repeated = 0;
   const client = await pool.connect();
@@ -244,7 +293,7 @@ async function applyUnits(memo, list) {
     await client.query('BEGIN');
     for (const r of list) {
       if (!r || !r.content) continue;
-      const type = TYPES[r.type] ? r.type : 'event';
+      const type = keys.has(r.type) ? r.type : 'event';
       const sameId = Number(r.same_as);
       if (sameId) {
         const hit = await client.query(
@@ -281,7 +330,8 @@ async function applyUnits(memo, list) {
 export async function getCoreMaterial(uid) {
   const { rows } = await pool.query(
     `SELECT type, content, quote, reason, people, count, importance FROM units
-     WHERE user_id = $2 AND type = ANY($1) ORDER BY count DESC, importance DESC, created_at DESC LIMIT 300`,
+     WHERE user_id = $2 AND (type = ANY($1) OR type NOT IN ('event', 'input', 'task'))
+       AND type NOT IN ('event', 'input', 'task') ORDER BY count DESC, importance DESC, created_at DESC LIMIT 300`,
     [['lesson', 'value', 'decision', 'person', 'goal', 'question', 'idea'], uid],
   );
   return rows;
@@ -357,7 +407,7 @@ export async function searchUnits(uid, { query = '', type = null, person = null,
     where.push(`(content ILIKE $${params.length} OR quote ILIKE $${params.length} OR reason ILIKE $${params.length}
       OR array_to_string(people, ' ') ILIKE $${params.length} OR array_to_string(tags, ' ') ILIKE $${params.length})`);
   }
-  if (type && TYPES[type]) { params.push(type); where.push(`type = $${params.length}`); }
+  if (type) { params.push(String(type)); where.push(`type = $${params.length}`); }
   if (person) { params.push(`%${person}%`); where.push(`array_to_string(people, ' ') ILIKE $${params.length}`); }
   params.push(Math.min(Math.max(Number(limit) || 20, 1), 100));
   const { rows } = await pool.query(
@@ -383,7 +433,7 @@ export async function updateUnit(uid, id, fields) {
     sets.push(`done_at = CASE WHEN $${params.length} THEN now() ELSE NULL END`);
   }
   if (typeof fields.reviewed === 'boolean') { params.push(fields.reviewed); sets.push(`reviewed = $${params.length}`); }
-  if (fields.type && TYPES[fields.type]) { params.push(fields.type); sets.push(`type = $${params.length}`); }
+  if (fields.type && (await typeKeys(uid)).has(fields.type)) { params.push(fields.type); sets.push(`type = $${params.length}`); }
   if (typeof fields.content === 'string' && fields.content.trim()) { params.push(fields.content.trim()); sets.push(`content = $${params.length}`); }
   if (fields.due !== undefined) { params.push(validDate(fields.due)); sets.push(`due = $${params.length}`); }
   if (!sets.length) return null;
@@ -396,19 +446,20 @@ export async function deleteUnit(uid, id) {
 }
 
 export async function getState(uid) {
-  const [units, failed, core, recordings, photos] = await Promise.all([
+  const [units, failed, core, recordings, photos, categories] = await Promise.all([
     pool.query(`SELECT ${UNIT_COLS} FROM units WHERE user_id = $1 ORDER BY created_at DESC LIMIT 2000`, [uid]),
     pool.query(`SELECT id, text, recorded_at FROM memos WHERE user_id = $1 AND NOT classified ORDER BY recorded_at DESC LIMIT 50`, [uid]),
     getCore(uid),
     getRecentRecordings(uid, 10),
     getRecentPhotos(uid, 12),
+    getCategories(uid),
   ]);
-  return { units: units.rows, failed: failed.rows, core, recordings, photos, canSummarizeAudio, canTranscribe };
+  return { units: units.rows, failed: failed.rows, core, recordings, photos, categories, canSummarizeAudio, canTranscribe };
 }
 
 // ---- Claudeに渡すテキスト整形 ----
 export function unitLine(u) {
-  const t = TYPES[u.type]?.label || u.type;
+  const t = TYPES[u.type]?.label || u.type_label || u.type;
   const bits = [`[${t}] ${u.content}`];
   if (u.quote) bits.push(`「${u.quote}」`);
   if (u.reason) bits.push(`理由：${u.reason}`);

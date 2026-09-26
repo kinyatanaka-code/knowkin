@@ -109,6 +109,8 @@ button{cursor:pointer}
 @media (prefers-reduced-motion:no-preference){.prog-steps li.now::before{animation:pulse 1.2s ease-in-out infinite}}
 .prog-steps li.done{color:var(--ink)}
 .prog-steps li.done::before{border-color:var(--l-rel);background:var(--l-rel)}
+.newtag{margin-left:6px;font-size:11px;font-weight:500;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 6px}
+.orb.small{width:clamp(38px,5.5vw,50px);height:clamp(38px,5.5vw,50px)}
 .pthumb{display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:10px;border:1px solid var(--line)}
 .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
 .photo{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
@@ -203,6 +205,24 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
 <script>
 const TYPES={event:{label:'記憶',layer:'event'},input:{label:'インプット',layer:'know'},lesson:{label:'フィードバック・教訓',layer:'know'},idea:{label:'アイディア',layer:'think'},decision:{label:'判断と理由',layer:'think'},value:{label:'価値観',layer:'think'},question:{label:'未解決の問い',layer:'think'},task:{label:'タスク',layer:'act'},goal:{label:'目標',layer:'act'},person:{label:'人物',layer:'rel'}};
 const LAYERS=[{id:'event',label:'出来事'},{id:'know',label:'知識'},{id:'think',label:'思考'},{id:'act',label:'行動'},{id:'rel',label:'関係'}];
+// 自動で作られたカテゴリも含めて、種類と層を引く
+const cats=()=>(state&&state.categories)||[];
+function T(key){
+  if(TYPES[key])return TYPES[key];
+  const c=cats().find(x=>x.key===key);
+  if(c)return {label:c.label,layer:c.layer==='new'?'n:'+c.layer_label:c.layer,custom:true};
+  return {label:key||'記憶',layer:'event'};
+}
+function allLayers(){
+  const extra=[...new Set(cats().filter(c=>c.layer==='new').map(c=>c.layer_label))].map(l=>({id:'n:'+l,label:l,custom:true}));
+  return [...LAYERS,...extra];
+}
+const EXTRA_COL=['#FFB86B','#F5E663','#7CF0FF','#FF8F8F'];
+function lcol(id){if(LCOL[id])return LCOL[id];const i=allLayers().filter(l=>l.custom).findIndex(l=>l.id===id);return EXTRA_COL[(i<0?0:i)%EXTRA_COL.length];}
+function typeOptions(sel){
+  return Object.entries(TYPES).map(([k,v])=>`<option value="${k}"${k===sel?' selected':''}>${v.label}</option>`).join('')
+    +(cats().length?`<optgroup label="自動で作ったカテゴリ">${cats().map(c=>`<option value="${esc(c.key)}"${c.key===sel?' selected':''}>${esc(c.label)}</option>`).join('')}</optgroup>`:'');
+}
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state={units:[],failed:[],core:null,recordings:[]};
@@ -258,7 +278,8 @@ const NODES=[
 ];
 const LCOL={event:'#5CD2FF',know:'#6F9BFF',think:'#B07CFF',act:'#FF6FC8',rel:'#4FE3C1'};
 const LAYER_INFO={event:'起きたこと、会った人、出来事の記憶',know:'学んだこと、上司からのフィードバックや教訓',think:'アイディア、判断とその理由、価値観、まだ答えの出ていない問い',act:'タスクと目標',rel:'よく関わる人の特徴や判断基準'};
-const layerOf=u=>(TYPES[u.type]||TYPES.event).layer;
+const layerOf=u=>T(u.type).layer;
+const EXTRA_SLOTS=[{x:66,y:88,mx:68,my:91},{x:50,y:16,mx:50,my:9},{x:88,y:86,mx:84,my:84},{x:12,y:86,mx:14,my:84}];
 const BRAIN=`<svg class="brain" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path d="M30 11c-4-4-12-3-13 3-6 0-9 6-7 10-4 3-4 10 0 13-2 5 2 11 8 11 2 5 9 7 12 3z"/>
   <path d="M34 11c4-4 12-3 13 3 6 0 9 6 7 10 4 3 4 10 0 13 2 5-2 11-8 11-2 5-9 7-12 3z"/>
@@ -267,6 +288,11 @@ const BRAIN=`<svg class="brain" viewBox="0 0 64 64" fill="none" stroke="currentC
   <g fill="currentColor" stroke="none"><circle cx="20" cy="22" r="1.3"/><circle cx="26" cy="33" r="1.3"/><circle cx="18" cy="44" r="1.3"/><circle cx="44" cy="22" r="1.3"/><circle cx="38" cy="33" r="1.3"/><circle cx="46" cy="44" r="1.3"/><circle cx="32" cy="30" r="2"/></g>
   <path d="M20 22L26 33L18 44M44 22L38 33L46 44M26 33L32 30L38 33" stroke-width="0.8" opacity=".7"/>
 </svg>`;
+function mapNodes(){
+  const base=NODES.map(n=>({...n,label:LAYERS.find(x=>x.id===n.id).label}));
+  const extra=allLayers().filter(l=>l.custom).slice(0,EXTRA_SLOTS.length).map((l,i)=>({...EXTRA_SLOTS[i],id:l.id,label:l.label,custom:true}));
+  return [...base,...extra];
+}
 function renderMap(){
   const units=state.units||[];
   const cnt=id=>units.filter(u=>layerOf(u)===id).length;
@@ -275,9 +301,9 @@ function renderMap(){
   $('map').innerHTML=`<canvas aria-hidden="true"></canvas>
     <svg class="links" aria-hidden="true"><defs><linearGradient id="linkGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#5CD2FF"/><stop offset="100%" stop-color="#FF6FC8"/></linearGradient></defs><g id="linkPaths"></g></svg>
     <button type="button" class="node core" data-view="rec" aria-pressed="${ui.view==='rec'}" style="--x:50%;--y:50%;--mx:50%;--my:43%">${BRAIN}<span class="name">記憶</span><span class="count">押して残す</span></button>
-    ${NODES.map(n=>{const l=LAYERS.find(x=>x.id===n.id);return `<button type="button" class="node" data-node="${n.id}" aria-pressed="${ui.view==='layer'&&ui.layer===n.id}" style="--x:${n.x}%;--y:${n.y}%;--mx:${n.mx}%;--my:${n.my}%;--c:${LCOL[n.id]}"><span class="orb"></span><span class="name">${l.label}</span><span class="count">${label(n.id)||'&nbsp;'}</span></button>`;}).join('')}`;
+    ${mapNodes().map(n=>`<button type="button" class="node" data-node="${esc(n.id)}" aria-pressed="${ui.view==='layer'&&ui.layer===n.id}" style="--x:${n.x}%;--y:${n.y}%;--mx:${n.mx}%;--my:${n.my}%;--c:${lcol(n.id)}"><span class="orb${n.custom?' small':''}"></span><span class="name">${esc(n.label)}</span><span class="count">${label(n.id)||'&nbsp;'}</span></button>`).join('')}`;
   layoutNet();
-  const review=units.filter(u=>!u.reviewed).length+(state.failed||[]).length;
+  const review=units.filter(u=>!u.reviewed).length+(state.failed||[]).length+cats().filter(c=>!c.reviewed).length;
   $('magnets').innerHTML=`<button type="button" class="magnet" data-view="review" aria-pressed="${ui.view==='review'}">見直し${review?`<span class="n">${review}</span>`:''}</button>
     <button type="button" class="magnet" data-view="core" aria-pressed="${ui.view==='core'}">核${state.core?'':'<span class="n">まだ</span>'}</button>
     <button type="button" class="magnet" data-view="account" aria-pressed="${ui.view==='account'}">${esc((state.user&&state.user.name)||'アカウント')}</button>`;
@@ -317,8 +343,8 @@ function drawNet(){
     if(d<110*110){g.strokeStyle=`rgba(120,160,255,${(1-Math.sqrt(d)/110)*.28})`;g.lineWidth=.6;g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke();}}}
   for(const p of parts){g.fillStyle='rgba(190,215,255,.75)';g.beginPath();g.arc(p.x,p.y,p.r,0,Math.PI*2);g.fill();}
   for(const s of stars){const c=centers[s.layer];if(!c)continue;const x=c.x+Math.cos(s.a)*s.rad,y=c.y+Math.sin(s.a)*s.rad*.8;
-    g.strokeStyle=LCOL[s.layer]+'55';g.lineWidth=.8;g.beginPath();g.moveTo(c.x,c.y);g.lineTo(x,y);g.stroke();
-    g.shadowColor=LCOL[s.layer];g.shadowBlur=10;g.fillStyle=s.done?'rgba(200,210,235,.5)':LCOL[s.layer];g.beginPath();g.arc(x,y,s.size,0,Math.PI*2);g.fill();g.shadowBlur=0;}
+    g.strokeStyle=lcol(s.layer)+'55';g.lineWidth=.8;g.beginPath();g.moveTo(c.x,c.y);g.lineTo(x,y);g.stroke();
+    g.shadowColor=lcol(s.layer);g.shadowBlur=10;g.fillStyle=s.done?'rgba(200,210,235,.5)':lcol(s.layer);g.beginPath();g.arc(x,y,s.size,0,Math.PI*2);g.fill();g.shadowBlur=0;}
 }
 function loopNet(){
   for(const p of net.parts){p.x+=p.vx;p.y+=p.vy;if(p.x<0||p.x>net.w)p.vx*=-1;if(p.y<0||p.y>net.h)p.vy*=-1;}
@@ -447,7 +473,7 @@ function resultHTML(r){
   return `<div class="result"><h3>${esc(r.title||'録音')}</h3>
     ${(r.summary||[]).length?`<ul>${r.summary.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`:''}
     <div class="meta"><span>${r.added||0}件の記憶に分けました${r.repeated?`（${r.repeated}件は前にもあった内容なので重みを上げました）`:''}</span></div>
-    ${(r.units||[]).length?`<ul>${r.units.map(u=>`<li><span style="color:var(--l-${(TYPES[u.type]||TYPES.event).layer});font-weight:700">${(TYPES[u.type]||TYPES.event).label}</span>　${esc(u.content)}</li>`).join('')}</ul>`:''}
+    ${(r.units||[]).length?`<ul>${r.units.map(u=>`<li><span style="color:${lcol(T(u.type).layer)};font-weight:700">${esc(T(u.type).label)}</span>　${esc(u.content)}</li>`).join('')}</ul>`:''}
     ${r.pending?`<p class="quote">原本を保存しました。Claudeとの会話で「knowkinの未整理メモを整理して」と頼むと分類されます。</p>`:''}
     <details><summary>文字起こしを見る</summary><p>${esc(r.transcript||'')}</p></details></div>`;
 }
@@ -606,7 +632,7 @@ function setupMic(){
 
 // ---- 一覧系 ----
 function unitHTML(u,{review=false}={}){
-  const t=TYPES[u.type]||TYPES.event;const meta=[];
+  const t=T(u.type);const meta=[];
   if(u.due)meta.push(`期限 ${esc(u.due)}`);
   if((u.people||[]).length)meta.push(esc(u.people.join('、')));
   if((u.tags||[]).length)meta.push(esc(u.tags.map(x=>'#'+x).join(' ')));
@@ -614,16 +640,18 @@ function unitHTML(u,{review=false}={}){
   if(u.importance===3)meta.push('重要');
   meta.push(esc(u.day||''));
   const isTask=u.type==='task'||u.type==='goal';let actions='';
-  if(review){const opts=Object.entries(TYPES).map(([k,v])=>`<option value="${k}"${k===u.type?' selected':''}>${v.label}</option>`).join('');const armed=ui.armed===u.id;
+  if(review){const opts=typeOptions(u.type);const armed=ui.armed===u.id;
     actions=`<div class="row-actions"><select data-retype="${u.id}" aria-label="種類を変える">${opts}</select><button data-ok="${u.id}">確認済みにする</button><button class="del${armed?' armed':''}" data-del="${u.id}">${armed?'もう一度押すと削除':'削除'}</button></div>`;}
   return `<li class="item${u.done?' done':''}">${isTask&&!review?`<input type="checkbox" class="check" data-done="${u.id}" ${u.done?'checked':''} aria-label="完了にする">`:''}
-    <div class="body"><div class="type" style="color:var(--l-${t.layer})">${t.label}</div><p class="content">${esc(u.content)}</p>
+    <div class="body"><div class="type" style="color:${lcol(t.layer)}">${esc(t.label)}${t.custom?'<span class="newtag">自動</span>':''}</div><p class="content">${esc(u.content)}</p>
     ${u.quote?`<p class="quote">「${esc(u.quote)}」</p>`:''}${u.reason?`<p class="quote">理由：${esc(u.reason)}</p>`:''}
     <div class="meta">${meta.map(m=>`<span>${m}</span>`).join('')}</div>${actions}</div></li>`;
 }
 function renderLayer(p){
-  const l=LAYERS.find(x=>x.id===ui.layer)||LAYERS[0];
-  p.innerHTML=`<h2>${l.label}</h2><p class="lead">${LAYER_INFO[l.id]}</p>
+  const l=allLayers().find(x=>x.id===ui.layer)||LAYERS[0];
+  const inLayer=cats().filter(c=>T(c.key).layer===l.id);
+  const info=(LAYER_INFO[l.id]||'自動で作られた層です')+(inLayer.length?`。自動で作ったカテゴリ：${inLayer.map(c=>c.label).join('、')}`:'');
+  p.innerHTML=`<h2>${esc(l.label)}</h2><p class="lead">${esc(info)}</p>
     <input class="search" id="q" type="search" placeholder="人・会社・テーマで探す" aria-label="${l.label}の記憶を探す"><div id="memlist"></div>`;
   const qi=$('q');qi.value=ui.q;qi.addEventListener('input',e=>{ui.q=e.target.value;renderMemList();});
   renderMemList();
@@ -642,11 +670,16 @@ function renderMemList(){
 }
 function renderReview(p){
   const unreviewed=state.units.filter(u=>!u.reviewed);const failed=state.failed||[];let html=`<h2>見直し</h2>`;
+  const newCats=cats().filter(c=>!c.reviewed);
+  if(newCats.length)html+=`<h4>新しくできたカテゴリ</h4><p class="lead">どの種類にも当てはまらない記憶のために、Claudeが作りました。このまま使うか、既存の種類にまとめてください。</p>
+    <ul class="list">${newCats.map(c=>`<li class="item"><div class="body"><div class="type" style="color:${lcol(T(c.key).layer)}">${esc(c.label)}<span class="newtag">自動</span></div>
+      <p class="content">${esc(c.description||'')}</p><div class="meta"><span>層：${esc(c.layer==='new'?c.layer_label+'（新しい層）':(LAYERS.find(l=>l.id===c.layer)||{}).label||c.layer)}</span><span>${c.unit_count}件</span></div>
+      <div class="row-actions"><button data-catok="${c.id}">このまま使う</button><select id="merge-${c.id}" aria-label="まとめ先">${Object.entries(TYPES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('')}${cats().filter(x=>x.id!==c.id).map(x=>`<option value="${esc(x.key)}">${esc(x.label)}</option>`).join('')}</select><button data-catmerge="${c.id}">にまとめる</button></div></div></li>`).join('')}</ul>`;
   if(failed.length)html+=state.aiEnabled
     ?`<h4>分類できなかったメモ</h4><ul class="list">${failed.map(m=>`<li class="item"><div class="body"><p class="content">${esc(m.text)}</p><div class="row-actions"><button data-reclass="${m.id}">分類し直す</button></div></div></li>`).join('')}</ul>`
     :`<h4>未整理のメモ（${failed.length}件）</h4><p class="lead">Claudeとの会話で「knowkinの未整理メモを整理して」と頼むと、分類されて記憶に入ります。</p><ul class="list">${failed.map(m=>`<li class="item"><div class="body"><p class="content">${esc(m.text)}</p></div></li>`).join('')}</ul>`;
   if(unreviewed.length)html+=`<div class="actions" style="justify-content:space-between;margin-top:8px"><span class="lead" style="margin:0">分類を確認して、違うものは直してください。</span><button class="ghost" id="okall">全部確認済みにする</button></div><ul class="list">${unreviewed.map(u=>unitHTML(u,{review:true})).join('')}</ul>`;
-  if(!failed.length&&!unreviewed.length)html+=`<p class="empty">見直すものはありません。週に1回ここを開いて、分類を確認するのがおすすめです。</p>`;
+  if(!failed.length&&!unreviewed.length&&!newCats.length)html+=`<p class="empty">見直すものはありません。週に1回ここを開いて、分類を確認するのがおすすめです。</p>`;
   p.innerHTML=html;
 }
 function renderCore(p){
@@ -712,6 +745,8 @@ document.addEventListener('click',async e=>{
       if(window.innerWidth<700)$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.id==='recbtn'){if(state.canSummarizeAudio||state.canTranscribe)toggleRecord();else toggleLive();return;}
     if(t.id==='vsave'){saveVoiceText();return;}
+    if(t.dataset.catok){await api('/api/categories/'+t.dataset.catok,{method:'PATCH',body:JSON.stringify({reviewed:true})});await load();return;}
+    if(t.dataset.catmerge){const into=$('merge-'+t.dataset.catmerge).value;await api(`/api/categories/${t.dataset.catmerge}/merge`,{method:'POST',body:JSON.stringify({into})});setStatus('既存の種類にまとめました。');await load();return;}
     if(t.id==='ppick'){$('pfile').click();return;}
     if(t.id==='psave'){sendPhoto();return;}
     if(t.id==='pick'){$('file').click();return;}

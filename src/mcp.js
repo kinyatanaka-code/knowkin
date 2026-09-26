@@ -2,13 +2,13 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
-  getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
+  getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
 } from './brain.js';
 
 const text = (t) => ({ content: [{ type: 'text', text: t }] });
-const typeEnum = z.enum(Object.keys(TYPES));
+const typeField = z.string().min(1).max(31);
 const unitSchema = z.object({
-  type: typeEnum,
+  type: typeField.describe('既存の種類（event など）か、create_category で作ったカテゴリの key'),
   content: z.string().min(1),
   quote: z.string().optional(),
   reason: z.string().optional(),
@@ -18,6 +18,19 @@ const unitSchema = z.object({
   importance: z.number().int().min(1).max(3).optional(),
   same_as: z.number().int().nullable().optional().describe('既存の記憶と同じ内容ならそのid'),
 });
+
+const NEW_CATEGORY_RULE = `## 新しいカテゴリ
+- 上の種類にも「自動で作ったカテゴリ」にも、どうしても当てはまらない内容があるときだけ、create_category で新しいカテゴリを作り、その key を type に使う
+- 無理に event に押し込まない。ただし、既存の種類で表せるものに新しいカテゴリは作らない（似たカテゴリを増やさない）
+- 新しいカテゴリは、なるべく既存の5つの層（event=出来事 / know=知識 / think=思考 / act=行動 / rel=関係）のどれかに入れる。どの層にも入らないときだけ layer を new にして新しい層を作る`;
+
+async function categoriesPart(uid) {
+  const cats = await getCategories(uid);
+  const list = cats.length
+    ? cats.map((c) => `- ${c.key}: ${c.label}（層：${c.layer === 'new' ? c.layer_label + '（新しい層）' : c.layer}）${c.description ? ' … ' + c.description : ''}`).join('\n')
+    : '（まだありません）';
+  return `## 自動で作ったカテゴリ（type にそのまま使える）\n${list}\n\n${NEW_CATEGORY_RULE}`;
+}
 
 export function buildMcpServer(uid) {
   const server = new McpServer({ name: 'knowkin', version: '1.0.0' });
@@ -50,7 +63,7 @@ export function buildMcpServer(uid) {
       + '会社名・人物名・テーマ（例：提案書、見積もり、プレゼン）が話題に出たら、関連する過去の記憶を探して回答に活かすこと。',
     inputSchema: {
       query: z.string().optional().describe('キーワード（会社名・テーマなど）。空なら新しい順'),
-      type: typeEnum.optional().describe('種類で絞り込む。lesson=フィードバック・教訓, decision=判断と理由, idea, value, question, task, goal, person, input, event'),
+      type: typeField.optional().describe('種類で絞り込む（自動で作ったカテゴリの key も可）。lesson=フィードバック・教訓, decision=判断と理由, idea, value, question, task, goal, person, input, event'),
       person: z.string().optional().describe('人物名で絞り込む'),
       limit: z.number().int().min(1).max(100).optional(),
     },
@@ -91,7 +104,7 @@ export function buildMcpServer(uid) {
       'ユーザーが「これ覚えておいて」「メモして」「knowkinに残して」と頼んだ内容を記憶に残す。ユーザーが明示的に頼んだときだけ呼ぶこと。'
       + 'text には本人の言葉をなるべくそのまま渡し、units には下のルールで自分で分類した結果を渡す（units を渡すとそのまま分類済みとして保存される）。'
       + '重複を判定したいときは先に get_unclassified_memos の existing か search_memory で既存の記憶を確認する。'
-      + `今日は ${todayJST()}。\n\n${CLASSIFY_RULES}`,
+      + `今日は ${todayJST()}。自動で作ったカテゴリの一覧は get_categories で確認できる。\n\n${CLASSIFY_RULES}\n\n${NEW_CATEGORY_RULE}`,
     inputSchema: {
       text: z.string().min(1).describe('残す内容（原本）'),
       units: z.array(unitSchema).optional().describe('自分で分類した記憶ユニット'),
@@ -130,6 +143,8 @@ ${memos.length ? '' : '（テキストのメモはありません。写真だけ
 
 ${CLASSIFY_RULES}
 
+${await categoriesPart(uid)}
+
 ## 未整理のメモ
 ${JSON.stringify(memos)}
 
@@ -140,6 +155,29 @@ ${JSON.stringify(existing)}${photoPart}`);
       intro.content.push({ type: 'image', data: Buffer.from(p.data).toString('base64'), mimeType: p.mime });
     }
     return intro;
+  });
+
+  server.registerTool('get_categories', {
+    title: '自動で作ったカテゴリの一覧',
+    description: '既存の10種類に当てはまらない記憶のために、これまでに自動で作ったカテゴリの一覧を返す。',
+    annotations: { readOnlyHint: true },
+  }, async () => text(await categoriesPart(uid)));
+
+  server.registerTool('create_category', {
+    title: '新しいカテゴリを作る',
+    description: '既存の種類にも、自動で作ったカテゴリにも当てはまらない記憶があるときだけ、新しいカテゴリを作る。作ったあとは、その key を save_units や add_memo の type に使う。作ったカテゴリは本人がknowkinの「見直し」で確認する。',
+    inputSchema: {
+      key: z.string().describe('英小文字で始まる英数字と _ の識別子（例：health_habit, side_project）'),
+      label: z.string().describe('日本語の短い表示名（10字以内が目安。例：体調・習慣、副業）'),
+      description: z.string().describe('このカテゴリにどんな記憶を入れるか（1文）'),
+      layer: z.enum(['event', 'know', 'think', 'act', 'rel', 'new']).describe('入れる層。どの層にも入らないときだけ new'),
+      new_layer_label: z.string().optional().describe('layer が new のときの新しい層の名前（4字以内が目安）'),
+    },
+  }, async (args) => {
+    try {
+      const c = await createCategory(uid, args);
+      return text(`カテゴリ「${c.label}」（key: ${c.key}）を作りました。type に ${c.key} を使ってください。`);
+    } catch (e) { return text(`作れませんでした：${e.message}`); }
   });
 
   server.registerTool('check_imported', {

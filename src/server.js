@@ -8,7 +8,7 @@ import { migrate } from './db.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
-  addMemo, addPhoto, addVoice, classifyMemoById, getPhoto, deleteUnit, getState, growCore, growCoresIfChanged, updateUnit, coreText, getCore, getOpenTasks,
+  addMemo, addPhoto, addVoice, classifyMemoById, getPhoto, mergeCategory, updateCategory, deleteUnit, getState, growCore, growCoresIfChanged, updateUnit, coreText, getCore, getOpenTasks,
 } from './brain.js';
 import {
   changePassword, clearFailures, createSession, createUser, destroySession, firstUser, getLinkToken, login, noteFailure,
@@ -162,6 +162,15 @@ api.get('/photos/:id', wrap(async (req, res) => {
   const p = await getPhoto(req.uid, Number(req.params.id));
   if (!p) return res.status(404).end();
   res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(Buffer.from(p.data));
+}));
+api.patch('/categories/:id', wrap(async (req, res) => {
+  const c = await updateCategory(req.uid, Number(req.params.id), req.body || {});
+  if (!c) return res.status(404).json({ error: '見つかりません' });
+  res.json(c);
+}));
+api.post('/categories/:id/merge', wrap(async (req, res) => {
+  try { res.json(await mergeCategory(req.uid, Number(req.params.id), String(req.body?.into || ''))); }
+  catch (e) { res.status(400).json({ error: e.message }); }
 }));
 app.use('/api', api);
 
