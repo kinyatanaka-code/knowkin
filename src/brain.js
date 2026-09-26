@@ -1,5 +1,7 @@
 import { pool } from './db.js';
 import { complete, aiEnabled } from './ai.js';
+import { askAudioJSON, canSummarizeAudio } from './audio.js';
+import { canTranscribe, transcribe } from './transcribe.js';
 
 export const TYPES = {
   event: { label: '記憶', layer: '出来事' },
@@ -108,6 +110,55 @@ async function classifyMemo(memo) {
   const existing = await getDedupList();
   const res = await askJSON(classifyPrompt(memo.text, todayJST(), existing));
   return applyUnits(memo, Array.isArray(res.units) ? res.units : []);
+}
+
+/** 録音・ボイスメモを文字起こし・要約し、記憶ユニットに分けて保存する */
+export async function addVoice(buffer, filename, mimetype) {
+  if (canSummarizeAudio) {
+    const existing = await getDedupList();
+    const r = await askAudioJSON(buffer, `あなたは「knowkin」という、ある一人の人のための第二の脳の整理係です。
+この録音は、本人の対面での会話、上司からのフィードバック、会議、または本人のひとり言のボイスメモです。今日は ${todayJST()} です。
+録音を聞いて、次の4つを作ってください。
+
+1. transcript：文字起こし。話者が区別できれば「本人：」「相手：」のように付ける。言いよどみや相づちは省いてよい
+2. title：内容がひと目でわかる20字以内のタイトル
+3. summary：要点を3〜5個の短い文で（誰が何を言ったか、何が決まったか、次に何をするか）
+4. units：記憶ユニット。次のルールに従う
+
+${CLASSIFY_RULES}
+
+## 既存の記憶
+${JSON.stringify(existing)}
+
+## 出力
+次の形のJSONだけを出力してください。
+{"title":"","summary":[],"transcript":"","units":[{"type":"lesson","content":"","quote":"","reason":"","people":[],"tags":[],"due":null,"importance":2,"same_as":null}]}`);
+    const units = Array.isArray(r.units) ? r.units : [];
+    const { rows } = await pool.query(
+      `INSERT INTO memos(text, source, title, summary) VALUES($1, 'voice', $2, $3) RETURNING *`,
+      [String(r.transcript || '（文字起こしなし）'), String(r.title || '録音'), strArr(r.summary)],
+    );
+    const saved = await applyUnits(rows[0], units);
+    return {
+      memo_id: rows[0].id, title: rows[0].title, summary: rows[0].summary, transcript: rows[0].text,
+      units: units.filter((u) => u && u.content).map((u) => ({ type: TYPES[u.type] ? u.type : 'event', content: String(u.content) })),
+      ...saved,
+    };
+  }
+  if (canTranscribe) {
+    const text = await transcribe(buffer, filename, mimetype);
+    if (!text) throw new Error('音声から文字を読み取れませんでした');
+    const r = await addMemo(text, 'voice');
+    return { ...r, title: '録音', summary: [], transcript: text, units: [] };
+  }
+  throw new Error('録音を扱うには GEMINI_API_KEY の設定が必要です');
+}
+
+export async function getRecentRecordings(limit = 10) {
+  const { rows } = await pool.query(
+    `SELECT id, title, summary, text, to_char(recorded_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS recorded_at
+     FROM memos WHERE source = 'voice' ORDER BY recorded_at DESC LIMIT $1`, [limit]);
+  return rows;
 }
 
 /** 未整理のメモ（Claudeとの会話で整理する用） */
@@ -293,12 +344,13 @@ export async function deleteUnit(id) {
 }
 
 export async function getState() {
-  const [units, failed, core] = await Promise.all([
+  const [units, failed, core, recordings] = await Promise.all([
     pool.query(`SELECT ${UNIT_COLS} FROM units ORDER BY created_at DESC LIMIT 2000`),
     pool.query(`SELECT id, text, recorded_at FROM memos WHERE NOT classified ORDER BY recorded_at DESC LIMIT 50`),
     getCore(),
+    getRecentRecordings(10),
   ]);
-  return { units: units.rows, failed: failed.rows, core };
+  return { units: units.rows, failed: failed.rows, core, recordings, canSummarizeAudio, canTranscribe };
 }
 
 // ---- Claudeに渡すテキスト整形 ----

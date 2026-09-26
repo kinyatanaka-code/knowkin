@@ -31,6 +31,12 @@ for (const tag of ['div', 'section', 'nav', 'ul', 'button', 'script', 'style']) 
   if (open === close) ok(`タグ <${tag}> ${open}組`); else ng(`タグ <${tag}> 開き${open} 閉じ${close}`);
 }
 
+// 2b. スクリプトが参照する id が画面に存在するか（画面が真っ白・null エラーの防止）
+const ids = new Set([...html.matchAll(/id="([\w-]+)"/g)].map((m) => m[1]));
+const refs = new Set(scripts.flatMap((s) => [...s.matchAll(/\$\('([\w-]+)'\)/g)].map((m) => m[1])));
+const missingIds = [...refs].filter((r) => !ids.has(r));
+if (missingIds.length) ng(`画面に存在しない id を参照しています：${missingIds.join(', ')}`); else ok(`id の参照 ${refs.size}個`);
+
 // 3. MCPツールが全部登録できるか
 try {
   process.env.DATABASE_URL ||= 'postgresql://smoke:smoke@localhost:1/smoke';
@@ -38,7 +44,7 @@ try {
   const server = buildMcpServer();
   const tools = Object.keys(server._registeredTools || {});
   const expected = ['get_core', 'get_current_tasks', 'search_memory', 'get_person', 'add_memo',
-    'get_unclassified_memos', 'save_units', 'get_core_material', 'save_core', 'update_task'];
+    'get_unclassified_memos', 'save_units', 'get_core_material', 'save_core', 'update_task', 'get_recent_recordings'];
   const missing = expected.filter((t) => !tools.includes(t));
   if (missing.length) ng(`MCPツールが足りません：${missing.join(', ')}`); else ok(`MCPツール ${tools.length}個`);
 } catch (e) { ng(`MCPサーバーの組み立て\n${e.stack}`); }

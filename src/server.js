@@ -9,10 +9,9 @@ import { migrate } from './db.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
-  addMemo, classifyMemoById, deleteUnit, getState, growCore, growCoreIfChanged, updateUnit, coreText, getCore, getOpenTasks,
+  addMemo, addVoice, classifyMemoById, deleteUnit, getState, growCore, growCoreIfChanged, updateUnit, coreText, getCore, getOpenTasks,
 } from './brain.js';
 import { buildMcpServer } from './mcp.js';
-import { canTranscribe, transcribe } from './transcribe.js';
 
 const { APP_TOKEN, MCP_SECRET, PORT = 3000 } = process.env;
 for (const k of ['DATABASE_URL', apiKeyEnv, 'APP_TOKEN', 'MCP_SECRET'].filter(Boolean)) {
@@ -45,7 +44,7 @@ const wrap = (fn) => (req, res) => fn(req, res).catch((e) => {
 // ---- REST API ----
 const api = express.Router();
 api.use(auth);
-api.get('/state', wrap(async (_req, res) => res.json({ ...(await getState()), canTranscribe, aiEnabled })));
+api.get('/state', wrap(async (_req, res) => res.json({ ...(await getState()), aiEnabled })));
 api.post('/memos', wrap(async (req, res) => {
   const text = String(req.body?.text || '').trim();
   if (!text) return res.status(400).json({ error: '内容が空です' });
@@ -65,14 +64,14 @@ api.post('/core/grow', wrap(async (_req, res) => {
 }));
 api.get('/handoff', wrap(async (_req, res) => res.type('text/plain').send(coreText(await getCore(), await getOpenTasks()))));
 
-// ボイスメモ（iPhoneショートカットなどから multipart の "file" で送る）
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
-api.post('/voice', upload.single('file'), wrap(async (req, res) => {
+// 録音・ボイスメモ（Web画面やiPhoneショートカットから multipart の "file" で送る）
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } });
+api.post('/voice', (req, res, next) => upload.single('file')(req, res, (err) => {
+  if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'ファイルが大きすぎます（100MBまで）' : 'ファイルを受け取れませんでした' });
+  next();
+}), wrap(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: '音声ファイル（file）がありません' });
-  const text = await transcribe(req.file.buffer, req.file.originalname || 'memo.m4a', req.file.mimetype);
-  if (!text) return res.status(400).json({ error: '音声から文字を読み取れませんでした' });
-  const r = await addMemo(text, 'voice');
-  res.json({ text, ...r });
+  res.json(await addVoice(req.file.buffer, req.file.originalname || 'memo.m4a', req.file.mimetype));
 }));
 app.use('/api', api);
 

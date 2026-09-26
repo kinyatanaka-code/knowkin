@@ -43,7 +43,8 @@ public/index.html  Web画面
 | `AI_PROVIDER` | 任意。未設定（`none`）ならAIの利用料ゼロ。サーバー側でも自動分類したいときだけ `gemini` / `openai` / `deepseek` / `anthropic` |
 | 選んだAIのキー | `AI_PROVIDER` を設定した場合のみ。`GEMINI_API_KEY` / `OPENAI_API_KEY` / `DEEPSEEK_API_KEY` / `ANTHROPIC_API_KEY` のどれか1つ |
 | `AI_MODEL` | 任意。空なら各社の安いモデル（gemini-2.5-flash / gpt-4.1-mini / deepseek-chat / claude-haiku-4-5） |
-| `OPENAI_API_KEY` | 任意。ボイスメモを文字起こしする場合のみ |
+| `GEMINI_API_KEY` | 任意。「記憶する」で録音・ボイスメモを文字起こし＋要約する場合に必要（`AUDIO_MODEL` で既定の gemini-2.5-flash を変更可） |
+| `OPENAI_API_KEY` | 任意。Geminiを使わず文字起こしだけしたい場合 |
 
 ランダム文字列は `openssl rand -hex 24` などで作ってください。
 

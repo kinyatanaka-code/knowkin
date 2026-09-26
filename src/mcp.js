@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
-  getOpenTasks, getPerson, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
+  getOpenTasks, getPerson, getRecentRecordings, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
 } from './brain.js';
 
 const text = (t) => ({ content: [{ type: 'text', text: t }] });
@@ -58,6 +58,18 @@ export function buildMcpServer() {
   }, async (args) => {
     const rows = await searchUnits(args);
     return text(rows.length ? rows.map(unitLine).join('\n') : '該当する記憶はありません。');
+  });
+
+  server.registerTool('get_recent_recordings', {
+    title: '最近の録音の要約',
+    description: 'ユーザーが録音・アップロードした対面の会話やボイスメモの、タイトルと要約を新しい順に返す。「この前の打ち合わせ」「さっきの面談」などの話題が出たら使う。full=trueで文字起こし全文も返す。',
+    inputSchema: { limit: z.number().int().min(1).max(20).optional(), full: z.boolean().optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ limit, full }) => {
+    const rows = await getRecentRecordings(limit || 5);
+    if (!rows.length) return text('録音はまだありません。');
+    return text(rows.map((r) => [`# ${r.title}（${r.recorded_at} / メモ ${r.id}）`, ...r.summary.map((s) => `- ${s}`),
+      ...(full ? ['', '## 文字起こし', r.text] : [])].join('\n')).join('\n\n'));
   });
 
   server.registerTool('get_person', {
