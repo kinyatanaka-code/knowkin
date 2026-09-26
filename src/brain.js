@@ -2,6 +2,7 @@ import { pool } from './db.js';
 import { complete, aiEnabled } from './ai.js';
 import { askAudioJSON, canSummarizeAudio } from './audio.js';
 import { canTranscribe, transcribe } from './transcribe.js';
+import { toJpeg } from './photo.js';
 
 export const TYPES = {
   event: { label: '記憶', layer: '出来事' },
@@ -77,8 +78,12 @@ ${text}
 {"units":[{"type":"lesson","content":"","quote":"","reason":"","people":[],"tags":[],"due":null,"importance":2,"same_as":null}]}`;
 }
 
-export async function addMemo(uid, text, source = 'text', units = null) {
-  const { rows } = await pool.query('INSERT INTO memos(user_id, text, source) VALUES($1, $2, $3) RETURNING *', [uid, text, source]);
+export async function addMemo(uid, text, source = 'text', units = null, ref = null) {
+  if (ref) {
+    const dup = await pool.query('SELECT id FROM memos WHERE user_id = $1 AND ref = $2', [uid, ref]);
+    if (dup.rows[0]) return { memo_id: dup.rows[0].id, added: 0, repeated: 0, duplicate: true };
+  }
+  const { rows } = await pool.query('INSERT INTO memos(user_id, text, source, ref) VALUES($1, $2, $3, $4) RETURNING *', [uid, text, source, ref]);
   const memo = rows[0];
   if (Array.isArray(units) && units.length) return { memo_id: memo.id, ...(await applyUnits(memo, units)) };
   if (!aiEnabled) return { memo_id: memo.id, added: 0, repeated: 0, pending: true };
@@ -164,11 +169,53 @@ export async function getRecentRecordings(uid, limit = 10) {
   return rows;
 }
 
+/** 写真のメモ。分類はClaudeが画像を見て行う */
+export async function addPhoto(uid, buffer, mimetype, caption = '') {
+  const img = await toJpeg(buffer, mimetype);
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `INSERT INTO memos(user_id, text, source) VALUES($1, $2, 'photo') RETURNING id`, [uid, String(caption || '').trim() || '（写真）']);
+    await client.query('INSERT INTO memo_images(memo_id, mime, data) VALUES($1, $2, $3)', [rows[0].id, img.mime, img.data]);
+    await client.query('COMMIT');
+    return { memo_id: rows[0].id, pending: true };
+  } catch (e) { await client.query('ROLLBACK'); throw e; } finally { client.release(); }
+}
+
+export async function getPhoto(uid, memoId) {
+  const { rows } = await pool.query(
+    `SELECT i.mime, i.data FROM memo_images i JOIN memos m ON m.id = i.memo_id WHERE m.id = $1 AND m.user_id = $2`, [memoId, uid]);
+  return rows[0] || null;
+}
+
+export async function getRecentPhotos(uid, limit = 12) {
+  const { rows } = await pool.query(
+    `SELECT id, title, summary, text, classified, to_char(recorded_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS recorded_at
+     FROM memos WHERE user_id = $2 AND source = 'photo' ORDER BY recorded_at DESC LIMIT $1`, [limit, uid]);
+  return rows;
+}
+
+/** 未整理の写真（画像つき） */
+export async function getUnclassifiedPhotos(uid, limit = 4) {
+  const { rows } = await pool.query(
+    `SELECT m.id, m.text, i.mime, i.data FROM memos m JOIN memo_images i ON i.memo_id = m.id
+     WHERE m.user_id = $1 AND NOT m.classified ORDER BY m.recorded_at ASC LIMIT $2`, [uid, limit]);
+  return rows;
+}
+
+/** すでに取り込み済みの ref を返す */
+export async function importedRefs(uid, refs) {
+  if (!refs.length) return [];
+  const { rows } = await pool.query('SELECT ref FROM memos WHERE user_id = $1 AND ref = ANY($2)', [uid, refs]);
+  return rows.map((r) => r.ref);
+}
+
 /** 未整理のメモ（Claudeとの会話で整理する用） */
 export async function getUnclassified(uid, limit = 20) {
   const { rows } = await pool.query(
     `SELECT id, text, source, to_char(recorded_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS recorded_at
-     FROM memos WHERE user_id = $2 AND NOT classified ORDER BY recorded_at ASC LIMIT $1`, [limit, uid]);
+     FROM memos WHERE user_id = $2 AND NOT classified AND source <> 'photo' ORDER BY recorded_at ASC LIMIT $1`, [limit, uid]);
   return rows;
 }
 
@@ -349,13 +396,14 @@ export async function deleteUnit(uid, id) {
 }
 
 export async function getState(uid) {
-  const [units, failed, core, recordings] = await Promise.all([
+  const [units, failed, core, recordings, photos] = await Promise.all([
     pool.query(`SELECT ${UNIT_COLS} FROM units WHERE user_id = $1 ORDER BY created_at DESC LIMIT 2000`, [uid]),
     pool.query(`SELECT id, text, recorded_at FROM memos WHERE user_id = $1 AND NOT classified ORDER BY recorded_at DESC LIMIT 50`, [uid]),
     getCore(uid),
     getRecentRecordings(uid, 10),
+    getRecentPhotos(uid, 12),
   ]);
-  return { units: units.rows, failed: failed.rows, core, recordings, canSummarizeAudio, canTranscribe };
+  return { units: units.rows, failed: failed.rows, core, recordings, photos, canSummarizeAudio, canTranscribe };
 }
 
 // ---- Claudeに渡すテキスト整形 ----

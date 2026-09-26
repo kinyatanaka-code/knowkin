@@ -109,6 +109,13 @@ button{cursor:pointer}
 @media (prefers-reduced-motion:no-preference){.prog-steps li.now::before{animation:pulse 1.2s ease-in-out infinite}}
 .prog-steps li.done{color:var(--ink)}
 .prog-steps li.done::before{border-color:var(--l-rel);background:var(--l-rel)}
+.pthumb{display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:10px;border:1px solid var(--line)}
+.photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.photo{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.photo img{display:block;width:100%;aspect-ratio:4/3;object-fit:cover;background:var(--bg2)}
+.photo figcaption{padding:8px 10px;font-size:13px;display:flex;flex-direction:column;gap:2px}
+.photo figcaption span{color:var(--muted);font-size:12px}
+.photo ul{margin:4px 0 0;padding-left:1.1em;color:var(--ink)}
 .result{margin-top:16px;border-left:3px solid var(--cyan);padding:4px 0 4px 14px;border-radius:0}
 .result h3,.rec-item h3{font-weight:700;font-size:18px;margin:0}
 .result ul,.rec-item ul{margin:6px 0 0;padding-left:1.2em}
@@ -344,7 +351,8 @@ function renderRec(p){
   const recs=state.recordings||[];
   if(!can){
     p.innerHTML=`<h2>記憶する</h2><p class="lead">対面の会話や上司からのフィードバックを、話しながら文字にして残します。</p>
-    ${freeRecHTML()}${writeHTML()}${recentHTML(recs)}`;
+    ${freeRecHTML()}${photoHTML()}${writeHTML()}${recentHTML(recs)}${recentPhotosHTML()}`;
+    bindPhoto();
     $('input').addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter')remember();});
     setupMic();return;
   }
@@ -358,7 +366,8 @@ function renderRec(p){
       <input type="file" id="file" accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.webm,.flac" hidden></div>
     <div id="result">${ui.result?resultHTML(ui.result):''}</div>
   </div>
-  ${writeHTML()}${recentHTML(recs)}`;
+  ${photoHTML()}${writeHTML()}${recentHTML(recs)}${recentPhotosHTML()}`;
+  bindPhoto();
   const drop=$('drop');
   ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
   ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
@@ -366,6 +375,54 @@ function renderRec(p){
   $('file').addEventListener('change',e=>{const f=e.target.files[0];if(f)sendAudio(f,f.name);e.target.value='';});
   $('input').addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter')remember();});
   setupMic();
+}
+// ---- 写真で残す ----
+function photoHTML(){
+  return `<h4>写真で残す</h4>
+  <div class="sheet">
+    <div class="drop" id="pdrop"><strong>ホワイトボードや手書きメモの写真</strong><br><button type="button" class="linkbtn" id="ppick">写真を選ぶ・撮る</button>（25MBまで）
+      <input type="file" id="pfile" accept="image/*" hidden></div>
+    <div id="ppreview"></div>
+    <label class="field" style="margin-top:12px"><span>ひとこと（任意）</span><input id="pcaption" type="text" placeholder="例：A社との打ち合わせのホワイトボード"></label>
+    <div class="actions"><button class="primary" type="button" id="psave" disabled>写真を残す</button></div>
+    <div id="pprog"></div>
+    <p class="hint" style="margin:10px 0 0">写っている文字や図は、Claudeが整理するときに読み取って、要約と5つの層への分類を行います。</p>
+  </div>`;
+}
+function recentPhotosHTML(){
+  const ph=state.photos||[];
+  if(!ph.length)return '';
+  return `<h4>最近の写真</h4><div class="photos">${ph.map(p=>`<figure class="photo"><img src="/api/photos/${p.id}" alt="${esc(p.title||p.text||'写真')}" loading="lazy">
+    <figcaption><strong>${esc(p.title||(p.text!=='（写真）'?p.text:'写真'))}</strong><span>${esc(p.recorded_at)}</span>
+    ${p.classified?`${(p.summary||[]).length?`<ul>${p.summary.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`:''}`:'<span style="color:var(--pink)">未整理：Claudeで整理すると読み取ります</span>'}</figcaption></figure>`).join('')}</div>`;
+}
+let pickedPhoto=null;
+function bindPhoto(){
+  const d=$('pdrop');if(!d)return;
+  ['dragenter','dragover'].forEach(ev=>d.addEventListener(ev,e=>{e.preventDefault();d.classList.add('over');}));
+  ['dragleave','drop'].forEach(ev=>d.addEventListener(ev,e=>{e.preventDefault();d.classList.remove('over');}));
+  d.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)pickPhoto(f);});
+  $('pfile').addEventListener('change',e=>{const f=e.target.files[0];if(f)pickPhoto(f);e.target.value='';});
+}
+function pickPhoto(f){
+  if(!/^image\//.test(f.type)&&!/\.(heic|heif)$/i.test(f.name)){setStatus('写真のファイルを選んでください。',true);return;}
+  if(f.size>25*1024*1024){setStatus('写真が大きすぎます（25MBまで）。',true);return;}
+  pickedPhoto=f;const url=URL.createObjectURL(f);
+  $('ppreview').innerHTML=`<img class="pthumb" src="${url}" alt="選んだ写真"><p class="hint" style="margin:6px 0 0">${esc(f.name)}（${(f.size/1024/1024).toFixed(1)}MB）</p>`;
+  $('psave').disabled=false;setStatus('');
+}
+function sendPhoto(){
+  if(busy||!pickedPhoto)return;busy=true;$('psave').disabled=true;
+  const fd=new FormData();fd.append('file',pickedPhoto,pickedPhoto.name||'photo.jpg');fd.append('caption',$('pcaption').value);
+  $('pprog').innerHTML=`<div class="prog"><div class="prog-bar"><span id="pfill"></span></div><div class="prog-row"><span id="plabel">送信中 0%</span></div></div>`;
+  const x=new XMLHttpRequest();x.open('POST','/api/photos');
+  x.upload.onprogress=e=>{if(e.lengthComputable){const p=e.loaded/e.total;$('pfill').style.width=(p*90).toFixed(0)+'%';$('plabel').textContent=p<1?`送信中 ${Math.round(p*100)}%`:'保存しています';}};
+  x.onload=async()=>{busy=false;
+    if(x.status===401){showLogin('ログインが切れました。もう一度ログインしてください。');return;}
+    if(x.status>=400){let m='写真を保存できませんでした';try{m=JSON.parse(x.responseText).error||m;}catch(_){}setStatus(m,true);$('pprog').innerHTML='';$('psave').disabled=false;return;}
+    pickedPhoto=null;setStatus('写真を残しました。Claudeとの会話で「knowkinの未整理メモを整理して」と頼むと、写っている内容を読み取って分類します。');await load();};
+  x.onerror=()=>{busy=false;setStatus('通信が切れました。電波のよい場所でもう一度お試しください。',true);$('pprog').innerHTML='';$('psave').disabled=false;};
+  x.send(fd);
 }
 function writeHTML(){
   return `<h4>書いて残す</h4>
@@ -655,6 +712,8 @@ document.addEventListener('click',async e=>{
       if(window.innerWidth<700)$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.id==='recbtn'){if(state.canSummarizeAudio||state.canTranscribe)toggleRecord();else toggleLive();return;}
     if(t.id==='vsave'){saveVoiceText();return;}
+    if(t.id==='ppick'){$('pfile').click();return;}
+    if(t.id==='psave'){sendPhoto();return;}
     if(t.id==='pick'){$('file').click();return;}
     if(t.dataset.p){const i=$('input');i.value+=(i.value&&!i.value.endsWith('\n')?'\n':'')+t.dataset.p;i.focus();return;}
     if(t.id==='save'){remember();return;}

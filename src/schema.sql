@@ -86,3 +86,15 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
   user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   expires_at  TIMESTAMPTZ NOT NULL
 );
+
+-- 取り込み元の識別子（kinbot・kincallからの二重取り込みを防ぐ）
+ALTER TABLE memos ADD COLUMN IF NOT EXISTS ref TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS memos_user_ref_idx ON memos(user_id, ref) WHERE ref IS NOT NULL;
+
+-- 写真のメモ
+CREATE TABLE IF NOT EXISTS memo_images (
+  memo_id     INTEGER PRIMARY KEY REFERENCES memos(id) ON DELETE CASCADE,
+  mime        TEXT NOT NULL,
+  data        BYTEA NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
-  getOpenTasks, getPerson, getRecentRecordings, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
+  getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
 } from './brain.js';
 
 const text = (t) => ({ content: [{ type: 'text', text: t }] });
@@ -95,9 +95,12 @@ export function buildMcpServer(uid) {
     inputSchema: {
       text: z.string().min(1).describe('残す内容（原本）'),
       units: z.array(unitSchema).optional().describe('自分で分類した記憶ユニット'),
+      ref: z.string().max(200).optional().describe('取り込み元の識別子（例 kinbot:meeting:<bot_id>、kincall:daily:2026-09-27）。同じ ref は二重に保存されない'),
+      source: z.enum(['claude', 'kinbot', 'kincall']).optional().describe('取り込み元。ユーザーに頼まれて残すときは省略'),
     },
-  }, async ({ text: t, units }) => {
-    const r = await addMemo(uid, t, 'claude', units || null);
+  }, async ({ text: t, units, ref, source }) => {
+    const r = await addMemo(uid, t, source || 'claude', units || null, ref || null);
+    if (r.duplicate) return text(`この内容（${ref}）はすでに取り込み済みなので、保存しませんでした。`);
     if (r.error) return text(r.error);
     if (r.pending) return text(`原本をメモ ${r.memo_id} として保存しました（未整理）。units を付けて保存し直すか、get_unclassified_memos → save_units で整理してください。`);
     return text(`${r.added}件の記憶を残しました${r.repeated ? `（${r.repeated}件は既存の記憶と同じ内容だったので重みを上げました）` : ''}。`);
@@ -111,10 +114,18 @@ export function buildMcpServer(uid) {
     annotations: { readOnlyHint: true },
   }, async () => {
     const memos = await getUnclassified(uid, 20);
-    if (!memos.length) return text('未整理のメモはありません。');
+    const photos = await getUnclassifiedPhotos(uid, 4);
+    if (!memos.length && !photos.length) return text('未整理のメモはありません。');
     const existing = await getDedupList(uid);
-    return text(`今日は ${todayJST()}。次のメモを分類し、メモごとに save_units を呼んでください。
+    const photoPart = photos.length ? `
+
+## 未整理の写真（この下に画像が続きます）
+写真はホワイトボード・手書きメモ・資料などです。写っている文字や図を読み取り、テキストのメモと同じルールで分類してください。
+あわせて title（20字以内）と summary（読み取った要点3〜5個）も作って、写真のメモ id で save_units を呼んでください。
+${JSON.stringify(photos.map((p) => ({ id: p.id, caption: p.text })))}` : '';
+    const intro = text(`今日は ${todayJST()}。次のメモを分類し、メモごとに save_units を呼んでください。
 source が voice のメモ（録音の文字起こし）は、あわせて title（20字以内）と summary（要点3〜5個の短い文）も作って save_units に渡してください。
+${memos.length ? '' : '（テキストのメモはありません。写真だけ整理してください）'}
 文字起こしは音声認識のため誤字や句読点抜けがあるので、文脈から意味をくみ取って整理してください。
 
 ${CLASSIFY_RULES}
@@ -123,7 +134,22 @@ ${CLASSIFY_RULES}
 ${JSON.stringify(memos)}
 
 ## 既存の記憶（重複判定用）
-${JSON.stringify(existing)}`);
+${JSON.stringify(existing)}${photoPart}`);
+    for (const p of photos) {
+      intro.content.push({ type: 'text', text: `写真のメモ id ${p.id}${p.text && p.text !== '（写真）' ? `（ひとこと：${p.text}）` : ''}` });
+      intro.content.push({ type: 'image', data: Buffer.from(p.data).toString('base64'), mimeType: p.mime });
+    }
+    return intro;
+  });
+
+  server.registerTool('check_imported', {
+    title: '取り込み済みか確認',
+    description: 'kinbot・kincallなど他のツールから記憶を取り込む前に、その ref がすでにknowkinに取り込み済みかをまとめて確認する。返ってきた ref は取り込まないこと。',
+    inputSchema: { refs: z.array(z.string().max(200)).max(200).describe('確認したい ref の一覧') },
+    annotations: { readOnlyHint: true },
+  }, async ({ refs }) => {
+    const done = await importedRefs(uid, refs);
+    return text(done.length ? `取り込み済み：${JSON.stringify(done)}` : 'どれもまだ取り込まれていません。');
   });
 
   server.registerTool('save_units', {
@@ -132,8 +158,8 @@ ${JSON.stringify(existing)}`);
     inputSchema: {
       memo_id: z.number().int().describe('メモのid'),
       units: z.array(unitSchema).describe('分類した記憶ユニット'),
-      title: z.string().optional().describe('録音（source=voice）のときのタイトル'),
-      summary: z.array(z.string()).optional().describe('録音（source=voice）のときの要点3〜5個'),
+      title: z.string().optional().describe('録音・写真のときのタイトル'),
+      summary: z.array(z.string()).optional().describe('録音・写真のときの要点3〜5個'),
     },
   }, async ({ memo_id: memoId, units, title, summary }) => {
     const r = await saveUnitsForMemo(uid, memoId, units, { title, summary });

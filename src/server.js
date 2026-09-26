@@ -8,7 +8,7 @@ import { migrate } from './db.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
-  addMemo, addVoice, classifyMemoById, deleteUnit, getState, growCore, growCoresIfChanged, updateUnit, coreText, getCore, getOpenTasks,
+  addMemo, addPhoto, addVoice, classifyMemoById, getPhoto, deleteUnit, getState, growCore, growCoresIfChanged, updateUnit, coreText, getCore, getOpenTasks,
 } from './brain.js';
 import {
   changePassword, clearFailures, createSession, createUser, destroySession, firstUser, getLinkToken, login, noteFailure,
@@ -148,6 +148,20 @@ api.post('/voice', (req, res, next) => upload.single('file')(req, res, (err) => 
     clearInterval(beat);
     res.end();
   }
+}));
+// 写真（ホワイトボード・手書きメモなど）
+const photoUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 25 * 1024 * 1024 } });
+api.post('/photos', (req, res, next) => photoUpload.single('file')(req, res, (err) => {
+  if (err) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? '写真が大きすぎます（25MBまで）' : '写真を受け取れませんでした' });
+  next();
+}), wrap(async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: '写真（file）がありません' });
+  res.json(await addPhoto(req.uid, req.file.buffer, req.file.mimetype, req.body?.caption));
+}));
+api.get('/photos/:id', wrap(async (req, res) => {
+  const p = await getPhoto(req.uid, Number(req.params.id));
+  if (!p) return res.status(404).end();
+  res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(Buffer.from(p.data));
 }));
 app.use('/api', api);
 
