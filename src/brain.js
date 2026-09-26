@@ -17,7 +17,7 @@ export const TYPES = {
   person: { label: '人物', layer: '関係' },
 };
 
-export const UNIT_COLS = `id, memo_id, type, content, quote, reason, people, tags, due, importance, count,
+export const UNIT_COLS = `id, memo_id, type, genre, content, quote, reason, people, tags, due, importance, count,
   done, done_at, reviewed, created_at, to_char(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS day,
   (SELECT c.label FROM categories c WHERE c.user_id = units.user_id AND c.key = units.type) AS type_label`;
 export const LAYER_IDS = ['event', 'know', 'think', 'act', 'rel'];
@@ -148,6 +148,28 @@ export async function classifyMemoById(uid, id) {
   const { rows } = await pool.query('SELECT * FROM memos WHERE id = $1 AND user_id = $2', [id, uid]);
   if (!rows[0]) throw new Error('メモが見つかりません');
   return classifyMemo(rows[0]);
+}
+
+/** 引き出しがまだ決まっていない記憶 */
+export async function getUnitsWithoutGenre(uid, limit = 120) {
+  const { rows } = await pool.query(
+    `SELECT id, type, left(content, 120) AS content, tags FROM units WHERE user_id = $1 AND genre = '' ORDER BY created_at DESC LIMIT $2`, [uid, limit]);
+  return rows;
+}
+export async function setGenres(uid, list) {
+  let n = 0;
+  for (const g of list) {
+    const r = await pool.query('UPDATE units SET genre = $1 WHERE id = $2 AND user_id = $3', [String(g.genre || '').trim().slice(0, 20), g.id, uid]);
+    n += r.rowCount;
+  }
+  return n;
+}
+
+/** これまでに使われた引き出し（テーマ）の名前 */
+export async function getGenres(uid) {
+  const { rows } = await pool.query(
+    `SELECT genre, count(*)::int AS n FROM units WHERE user_id = $1 AND genre <> '' GROUP BY genre ORDER BY n DESC LIMIT 60`, [uid]);
+  return rows;
 }
 
 /** 重複判定用の既存の記憶 */
@@ -308,10 +330,10 @@ async function applyUnits(memo, list) {
         if (hit.rowCount) { repeated++; continue; }
       }
       await client.query(
-        `INSERT INTO units(user_id, memo_id, type, content, quote, reason, people, tags, due, importance, dates)
-         VALUES($11, $1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::date])`,
+        `INSERT INTO units(user_id, memo_id, type, content, quote, reason, people, tags, due, importance, dates, genre)
+         VALUES($11, $1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::date], $12)`,
         [memo.id, type, String(r.content), String(r.quote || ''), String(r.reason || ''),
-          strArr(r.people), strArr(r.tags), validDate(r.due), imp(r.importance), today, memo.user_id],
+          strArr(r.people), strArr(r.tags), validDate(r.due), imp(r.importance), today, memo.user_id, String(r.genre || '').trim().slice(0, 20)],
       );
       added++;
     }
@@ -434,6 +456,7 @@ export async function updateUnit(uid, id, fields) {
   }
   if (typeof fields.reviewed === 'boolean') { params.push(fields.reviewed); sets.push(`reviewed = $${params.length}`); }
   if (fields.type && (await typeKeys(uid)).has(fields.type)) { params.push(fields.type); sets.push(`type = $${params.length}`); }
+  if (typeof fields.genre === 'string') { params.push(fields.genre.trim().slice(0, 20)); sets.push(`genre = $${params.length}`); }
   if (typeof fields.content === 'string' && fields.content.trim()) { params.push(fields.content.trim()); sets.push(`content = $${params.length}`); }
   if (fields.due !== undefined) { params.push(validDate(fields.due)); sets.push(`due = $${params.length}`); }
   if (!sets.length) return null;

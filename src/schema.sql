@@ -125,3 +125,6 @@ CREATE TABLE IF NOT EXISTS google_links (
   last_error     TEXT NOT NULL DEFAULT '',
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- 層の中の「引き出し」（テーマ）
+ALTER TABLE units ADD COLUMN IF NOT EXISTS genre TEXT NOT NULL DEFAULT '';

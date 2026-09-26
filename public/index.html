@@ -109,6 +109,16 @@ button{cursor:pointer}
 @media (prefers-reduced-motion:no-preference){.prog-steps li.now::before{animation:pulse 1.2s ease-in-out infinite}}
 .prog-steps li.done{color:var(--ink)}
 .prog-steps li.done::before{border-color:var(--l-rel);background:var(--l-rel)}
+.drawers{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:6px}
+.drawer{display:flex;flex-direction:column;gap:6px;text-align:left;background:var(--surface);border:1px solid var(--line);border-top:3px solid var(--c);border-radius:12px;padding:12px 12px 14px;min-height:108px;color:var(--ink)}
+.drawer:hover{border-color:var(--c)}
+.drawer-top{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.drawer-name{font-weight:700;font-size:16px;overflow-wrap:anywhere}
+.drawer-n{font-size:13px;color:var(--c);font-weight:700;white-space:nowrap}
+.drawer-prev{font-size:13px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.back{background:none;border:0;color:var(--cyan);padding:4px 0;margin:4px 0 8px;font-weight:700}
+.drawer-head{display:flex;align-items:baseline;gap:10px;border-left:3px solid var(--c);padding-left:10px;margin:0 0 4px}
+.drawer-head h3{margin:0;font-size:19px}.drawer-head span{color:var(--muted);font-size:13px}
 .newtag{margin-left:6px;font-size:11px;font-weight:500;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 6px}
 .orb.small{width:clamp(38px,5.5vw,50px);height:clamp(38px,5.5vw,50px)}
 .pthumb{display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:10px;border:1px solid var(--line)}
@@ -638,7 +648,7 @@ function setupMic(){
 }
 
 // ---- 一覧系 ----
-function unitHTML(u,{review=false}={}){
+function unitHTML(u,{review=false,showLayer=false}={}){
   const t=T(u.type);const meta=[];
   if(u.due)meta.push(`期限 ${esc(u.due)}`);
   if((u.people||[]).length)meta.push(esc(u.people.join('、')));
@@ -650,30 +660,75 @@ function unitHTML(u,{review=false}={}){
   if(review){const opts=typeOptions(u.type);const armed=ui.armed===u.id;
     actions=`<div class="row-actions"><select data-retype="${u.id}" aria-label="種類を変える">${opts}</select><button data-ok="${u.id}">確認済みにする</button><button class="del${armed?' armed':''}" data-del="${u.id}">${armed?'もう一度押すと削除':'削除'}</button></div>`;}
   return `<li class="item${u.done?' done':''}">${isTask&&!review?`<input type="checkbox" class="check" data-done="${u.id}" ${u.done?'checked':''} aria-label="完了にする">`:''}
-    <div class="body"><div class="type" style="color:${lcol(t.layer)}">${esc(t.label)}${t.custom?'<span class="newtag">自動</span>':''}</div><p class="content">${esc(u.content)}</p>
+    <div class="body"><div class="type" style="color:${lcol(t.layer)}">${esc(t.label)}${t.custom?'<span class="newtag">自動</span>':''}${u.genre&&!showLayer?`<span class="newtag">${esc(u.genre)}</span>`:''}</div><p class="content">${esc(u.content)}</p>
     ${u.quote?`<p class="quote">「${esc(u.quote)}」</p>`:''}${u.reason?`<p class="quote">理由：${esc(u.reason)}</p>`:''}
     <div class="meta">${meta.map(m=>`<span>${m}</span>`).join('')}</div>${actions}</div></li>`;
+}
+// ---- 引き出し：層の中をテーマ（関係は人物）ごとに分ける ----
+const cleanTag=t=>String(t||'').replace(/^#/,'').trim();
+function drawersFor(layerId){
+  const all=state.units||[];
+  if(layerId==='rel'){
+    const map=new Map();
+    for(const u of all)for(const n of (u.people||[])){const k=String(n).trim();if(!k)continue;if(!map.has(k))map.set(k,[]);map.get(k).push(u);}
+    const ds=[...map].map(([name,us])=>({key:'p:'+name,label:name,person:true,
+      units:us.slice().sort((a,b)=>(layerOf(b)==='rel')-(layerOf(a)==='rel')||String(b.created_at).localeCompare(String(a.created_at)))}));
+    const orphan=all.filter(u=>layerOf(u)==='rel'&&!(u.people||[]).length);
+    if(orphan.length)ds.push({key:'p:',label:'名前なし',units:orphan});
+    return ds.sort((a,b)=>b.units.length-a.units.length);
+  }
+  let list=all.filter(u=>layerOf(u)===layerId);
+  const ds=new Map();const add=(key,label,u)=>{if(!ds.has(key))ds.set(key,{key,label,units:[]});ds.get(key).units.push(u);};
+  if(layerId==='act'){const done=list.filter(u=>u.done);list=list.filter(u=>!u.done);if(done.length)ds.set('done',{key:'done',label:'終わったもの',units:done,last:true});}
+  if(layerId==='think'){for(const u of list)add('t:'+u.type,T(u.type).label,u);}
+  else{
+    const freq={};for(const u of list)for(const t of (u.tags||[]).map(cleanTag))if(t)freq[t]=(freq[t]||0)+1;
+    for(const u of list){
+      let g=(u.genre||'').trim();
+      if(!g){const best=(u.tags||[]).map(cleanTag).filter(t=>freq[t]>=2).sort((a,b)=>freq[b]-freq[a])[0];g=best||'';}
+      add('g:'+(g||'その他'),g||'その他',u);
+    }
+  }
+  const arr=[...ds.values()];
+  for(const d of arr){
+    if(layerId==='act'&&!d.last)d.units.sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));
+    else d.units.sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  }
+  return arr.sort((a,b)=>(a.last?1:0)-(b.last?1:0)||(a.label==='その他')-(b.label==='その他')||b.units.length-a.units.length);
+}
+function drawerPreview(d){
+  const u=d.person?(d.units.find(x=>layerOf(x)==='rel')||d.units[0]):d.units[0];
+  return u?u.content:'';
 }
 function renderLayer(p){
   const l=allLayers().find(x=>x.id===ui.layer)||LAYERS[0];
   const inLayer=cats().filter(c=>T(c.key).layer===l.id);
   const info=(LAYER_INFO[l.id]||'自動で作られた層です')+(inLayer.length?`。自動で作ったカテゴリ：${inLayer.map(c=>c.label).join('、')}`:'');
   p.innerHTML=`<h2>${esc(l.label)}</h2><p class="lead">${esc(info)}</p>
-    <input class="search" id="q" type="search" placeholder="人・会社・テーマで探す" aria-label="${l.label}の記憶を探す"><div id="memlist"></div>`;
+    <input class="search" id="q" type="search" placeholder="人・会社・テーマで探す" aria-label="${esc(l.label)}の記憶を探す"><div id="memlist"></div>`;
   const qi=$('q');qi.value=ui.q;qi.addEventListener('input',e=>{ui.q=e.target.value;renderMemList();});
   renderMemList();
 }
 function renderMemList(){
-  const box=$('memlist');if(!box)return;const q=ui.q.trim().toLowerCase();
-  let list=state.units.filter(u=>layerOf(u)===ui.layer);
-  if(q)list=list.filter(u=>[u.content,u.quote,u.reason,...(u.people||[]),...(u.tags||[])].join(' ').toLowerCase().includes(q));
-  if(ui.layer==='act'){
-    const open=list.filter(u=>!u.done).sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));
-    const done=list.filter(u=>u.done).sort((a,b)=>String(b.done_at||'').localeCompare(String(a.done_at||''))).slice(0,10);
-    box.innerHTML=(open.length?`<ul class="list">${open.map(u=>unitHTML(u)).join('')}</ul>`:`<p class="empty">未完了のタスクはありません。</p>`)+(done.length?`<h4>最近終わったもの</h4><ul class="list">${done.map(u=>unitHTML(u)).join('')}</ul>`:'');
+  const box=$('memlist');if(!box)return;const q=ui.q.trim().toLowerCase();const lid=ui.layer;const col=lcol(lid);
+  const hit=u=>[u.content,u.quote,u.reason,u.genre,...(u.people||[]),...(u.tags||[])].join(' ').toLowerCase().includes(q);
+  if(q){
+    const pool=lid==='rel'?state.units.filter(u=>layerOf(u)==='rel'||(u.people||[]).length):state.units.filter(u=>layerOf(u)===lid);
+    const list=pool.filter(hit);
+    box.innerHTML=list.length?`<ul class="list">${list.slice(0,200).map(u=>unitHTML(u)).join('')}</ul>`:`<p class="empty">条件に合う記憶はありません。</p>`;return;
+  }
+  const ds=drawersFor(lid);
+  if(!ds.length){box.innerHTML=`<p class="empty">まだこの層の記憶はありません。真ん中の「記憶」から残してください。</p>`;return;}
+  const open=ui.drawer&&ds.find(d=>d.key===ui.drawer);
+  if(open){
+    box.innerHTML=`<button class="back" type="button" data-drawer="">← 引き出し一覧</button>
+      <div class="drawer-head" style="--c:${col}"><h3>${esc(open.label)}</h3><span>${open.units.length}件</span></div>
+      <ul class="list">${open.units.slice(0,300).map(u=>unitHTML(u,{showLayer:lid==='rel'})).join('')}</ul>`;
     return;
   }
-  box.innerHTML=list.length?`<ul class="list">${list.slice(0,200).map(u=>unitHTML(u)).join('')}</ul>`:`<p class="empty">${q?'条件に合う記憶はありません。':'まだこの層の記憶はありません。真ん中の「記憶」から残してください。'}</p>`;
+  box.innerHTML=`<div class="drawers">${ds.map(d=>`<button type="button" class="drawer" data-drawer="${esc(d.key)}" style="--c:${col}">
+      <span class="drawer-top"><span class="drawer-name">${esc(d.label)}</span><span class="drawer-n">${d.units.length}</span></span>
+      <span class="drawer-prev">${esc(drawerPreview(d))}</span></button>`).join('')}</div>`;
 }
 function renderReview(p){
   const unreviewed=state.units.filter(u=>!u.reviewed);const failed=state.failed||[];let html=`<h2>見直し</h2>`;
@@ -755,10 +810,11 @@ document.addEventListener('click',async e=>{
       ui.armed=null;await api('/api/account/disconnect',{method:'POST'});setStatus('Claude.aiとの接続を切りました。');render();return;}
     if(t.dataset.copy){const i=$(t.dataset.copy);i.select();try{await navigator.clipboard.writeText(i.value);t.textContent='コピーしました';setTimeout(()=>{t.textContent='コピー';},1500);}catch(_){}return;}
     if(t.id==='pwBtn'){try{await api('/api/account/password',{method:'POST',body:JSON.stringify({current:$('pw-cur').value,next:$('pw-new').value})});authMode='login';showLogin('パスワードを変えました。新しいパスワードでログインしてください。');}catch(err){setStatus(err.message,true);}return;}
+    if(t.dataset.drawer!==undefined){ui.drawer=t.dataset.drawer||null;renderMemList();$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.dataset.view||t.dataset.node){
       if((recorder&&recorder.state==='recording')||live){setStatus('録音中です。止めてから切り替えてください。',true);return;}
       if(prog){setStatus('アップロードの処理中です。終わるまでこのままお待ちください。',true);return;}
-      if(t.dataset.node){if(ui.layer!==t.dataset.node)ui.q='';ui.view='layer';ui.layer=t.dataset.node;}else ui.view=t.dataset.view;
+      if(t.dataset.node){if(ui.layer!==t.dataset.node){ui.q='';ui.drawer=null;}ui.view='layer';ui.layer=t.dataset.node;}else ui.view=t.dataset.view;
       ui.armed=null;if(ui.view!=='rec')ui.result=null;setStatus('');render();
       if(window.innerWidth<700)$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.id==='recbtn'){if(state.canSummarizeAudio||state.canTranscribe)toggleRecord();else toggleLive();return;}

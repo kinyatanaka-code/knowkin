@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
-  getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
+  getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getGenres, getUnitsWithoutGenre, setGenres, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
 } from './brain.js';
 
 const text = (t) => ({ content: [{ type: 'text', text: t }] });
@@ -17,6 +17,7 @@ const unitSchema = z.object({
   due: z.string().nullable().optional().describe('YYYY-MM-DD'),
   importance: z.number().int().min(1).max(3).optional(),
   same_as: z.number().int().nullable().optional().describe('既存の記憶と同じ内容ならそのid'),
+  genre: z.string().max(20).optional().describe('引き出しの名前（テーマ）。既存の引き出し名があればそれを使う'),
 });
 
 const NEW_CATEGORY_RULE = `## 新しいカテゴリ
@@ -29,7 +30,14 @@ async function categoriesPart(uid) {
   const list = cats.length
     ? cats.map((c) => `- ${c.key}: ${c.label}（層：${c.layer === 'new' ? c.layer_label + '（新しい層）' : c.layer}）${c.description ? ' … ' + c.description : ''}`).join('\n')
     : '（まだありません）';
-  return `## 自動で作ったカテゴリ（type にそのまま使える）\n${list}\n\n${NEW_CATEGORY_RULE}`;
+  const genres = await getGenres(uid);
+  return `## 自動で作ったカテゴリ（type にそのまま使える）\n${list}\n\n${NEW_CATEGORY_RULE}
+
+## 引き出し（genre）
+- 各ユニットに genre として、その記憶が入る「引き出し」の名前を付ける。引き出しは、層の中でテーマごとに記憶をまとめる箱（例：営業トーク、kinbot開発、インターン管理、マーケ連携）
+- 2〜8字程度の短い日本語にする。人物名は genre にせず people に入れる（関係の層は人物ごとに自動でまとまる）
+- 下の既存の引き出しに合うものがあれば、必ず同じ名前を使う。似た名前を増やさない
+- 既存の引き出し：${genres.length ? genres.map((g) => `${g.genre}（${g.n}）`).join('、') : '（まだありません）'}`;
 }
 
 export function buildMcpServer(uid) {
@@ -184,6 +192,27 @@ ${JSON.stringify(existing)}${photoPart}`);
       return text(`カテゴリ「${c.label}」（key: ${c.key}）を作りました。type に ${c.key} を使ってください。`);
     } catch (e) { return text(`作れませんでした：${e.message}`); }
   });
+
+  server.registerTool('get_units_without_drawer', {
+    title: '引き出しが決まっていない記憶',
+    description: 'ユーザーが「knowkinの引き出しを整理して」と頼んだら呼ぶ。引き出し（genre）がまだ決まっていない記憶と、既存の引き出しの一覧を返すので、テーマごとに genre を決めて set_drawers で保存すること。',
+    annotations: { readOnlyHint: true },
+  }, async () => {
+    const units = await getUnitsWithoutGenre(uid);
+    if (!units.length) return text('引き出しが決まっていない記憶はありません。');
+    const genres = await getGenres(uid);
+    return text(`次の記憶に、テーマごとの引き出しの名前（genre、2〜8字）を付けて set_drawers で保存してください。
+人物名は引き出しにしない（関係の層は人物ごとに自動でまとまる）。既存の引き出しに合うものは同じ名前を使い、似た名前を増やさない。
+既存の引き出し：${genres.length ? genres.map((g) => g.genre).join('、') : '（まだありません）'}
+
+${JSON.stringify(units)}`);
+  });
+
+  server.registerTool('set_drawers', {
+    title: '記憶を引き出しに入れる',
+    description: 'get_units_without_drawer で取得した記憶に、引き出しの名前（genre）を付けて保存する。',
+    inputSchema: { items: z.array(z.object({ id: z.number().int(), genre: z.string().min(1).max(20) })).max(200) },
+  }, async ({ items }) => text(`${await setGenres(uid, items)}件を引き出しに入れました。`));
 
   server.registerTool('check_imported', {
     title: '取り込み済みか確認',
