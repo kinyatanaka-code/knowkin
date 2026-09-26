@@ -70,6 +70,16 @@ Web画面でアカウント（メールアドレスとパスワード）を作�
 
 Claude Codeのルーティンで、kinbot・kincall・knowkinの3つのコネクタを使い、毎日の商談や架電の結果をknowkinに取り込みます。`add_memo` に `ref`（例 `kinbot:event:<id>`）を付けると、同じものは二重に保存されません。
 
+## Gmail・Googleチャット
+
+アカウント画面の「Googleと連携する」から、読み取り専用の権限で連携します。1時間ごと（毎時30分）に新しいメールと、参加しているGoogleチャットのやり取りを未整理メモとして取り込み、整理のときにClaudeが相手との関係性・依頼・決定事項を読み取ります。
+
+必要な設定（Google Cloud）：
+- OAuth同意画面を「内部（Internal）」で作る
+- Gmail API・Google Chat API・People API を有効にする（Chat APIは「構成」ページでアプリ名などの設定も必要）
+- 認証情報で「OAuthクライアントID（ウェブアプリケーション）」を作り、リダイレクトURIに `https://<発行されたURL>/api/google/callback` を登録
+- Railwayに `GOOGLE_CLIENT_ID`・`GOOGLE_CLIENT_SECRET`（任意で `TOKEN_ENC_KEY`）を設定
+
 ## AIなしモード（既定・無料）
 
 `AI_PROVIDER` を設定しなければ、サーバーはAIのAPIを一切使いません。分類と核づくりは、Claude.aiとの会話の中でClaudeが行います（Claude.aiのプランの範囲内なので追加料金なし）。

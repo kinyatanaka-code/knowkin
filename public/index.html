@@ -259,7 +259,14 @@ async function submitAuth(){
 }
 async function boot(){
   try{const s=await api('/api/auth/status');signup=s.signup||signup;
-    if(s.user){await load();return;}
+    if(s.user){
+      const q=new URLSearchParams(location.search);const g=q.get('google');
+      if(g){ui.view='account';history.replaceState(null,'','/');}
+      await load();
+      if(g==='connected')setStatus('Googleと連携しました。直近3日分から取り込みを始めます。');
+      else if(g==='denied')setStatus('Googleとの連携をキャンセルしました。',true);
+      else if(g==='error')setStatus('Googleとの連携に失敗しました：'+(q.get('msg')||''),true);
+      return;}
     authMode=signup.open&&!signup.needCode?'signup':'login';showLogin();}
   catch(e){showLogin('サーバーに接続できませんでした。');}
 }
@@ -692,6 +699,15 @@ function renderCore(p){
   html+=`<div class="actions" style="justify-content:flex-start;margin-top:16px">${state.aiEnabled?'<button class="primary" id="grow">核を育てる</button>':''}<button class="ghost" id="copy">Claudeに渡す文章を作る</button></div><div id="copyarea"></div>`;
   p.innerHTML=html;
 }
+function googleHTML(g){
+  if(!g.enabled)return `<p class="hint" style="margin:0">Google連携はまだ設定されていません。サーバーに GOOGLE_CLIENT_ID と GOOGLE_CLIENT_SECRET を設定すると使えるようになります。</p>`;
+  if(!g.linked)return `<p class="hint" style="margin:0 0 10px">連携すると、Gmailと参加しているGoogleチャットのやり取りを1時間ごとに読み取って、未整理メモとして貯めます。権限は読み取りだけで、メールの送信や削除はできません。</p>
+    <div class="actions" style="justify-content:flex-start"><a class="primary" href="/api/google/connect" style="text-decoration:none">Googleと連携する</a></div>`;
+  return `<p style="margin:0 0 4px">${esc(g.email||'連携中')} と連携しています</p>
+    <div class="meta"><span>最終取り込み ${g.last_sync_at?esc(new Date(g.last_sync_at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'})):'まだ'}</span>${g.last_result?`<span>${esc(g.last_result)}</span>`:''}</div>
+    ${g.last_error?`<p class="status err" style="margin:6px 0 0">${esc(g.last_error)}</p>`:''}
+    <div class="actions" style="justify-content:flex-start;margin-top:10px"><button class="ghost" id="gsync">今すぐ取り込む</button><button class="ghost" id="gunlink">連携を解除</button></div>`;
+}
 async function renderAccount(p){
   p.innerHTML=`<h2>アカウント</h2><p class="lead">読み込んでいます…</p>`;
   try{ui.account=ui.account||await api('/api/account');}catch(e){if(e.message!=='unauthorized')p.innerHTML=`<h2>アカウント</h2><p class="status err">${esc(e.message)}</p>`;return;}
@@ -711,6 +727,8 @@ async function renderAccount(p){
     <div class="copyrow"><input id="acc-key" readonly value="Bearer ${esc(a.key)}" aria-label="Authorization"><button class="ghost" data-copy="acc-key">コピー</button></div>
     <div class="actions" style="justify-content:flex-start"><button class="ghost" id="rotate">連携キーを作り直す</button></div>
   </div>
+  <h4>Gmail・Googleチャット</h4>
+  <div class="sheet">${googleHTML(a.google||{})}</div>
   <h4>パスワードを変える</h4>
   <div class="sheet">
     <label class="field"><span>今のパスワード</span><input id="pw-cur" type="password" autocomplete="current-password"></label>
@@ -745,6 +763,9 @@ document.addEventListener('click',async e=>{
       if(window.innerWidth<700)$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.id==='recbtn'){if(state.canSummarizeAudio||state.canTranscribe)toggleRecord();else toggleLive();return;}
     if(t.id==='vsave'){saveVoiceText();return;}
+    if(t.id==='gsync'){t.disabled=true;setStatus('Gmail・Googleチャットを読み取っています…');const r=await api('/api/google/sync',{method:'POST'});ui.account=null;setStatus(r.error?r.error:`取り込みました（${r.result}）。整理はルーティンか「knowkinの未整理メモを整理して」で行われます。`,!!r.error);await load();return;}
+    if(t.id==='gunlink'){if(ui.armed!=='gunlink'){ui.armed='gunlink';t.textContent='もう一度押すと解除します';t.classList.add('on');return;}
+      ui.armed=null;await api('/api/google/disconnect',{method:'POST'});ui.account=null;setStatus('Googleとの連携を解除しました。');render();return;}
     if(t.dataset.catok){await api('/api/categories/'+t.dataset.catok,{method:'PATCH',body:JSON.stringify({reviewed:true})});await load();return;}
     if(t.dataset.catmerge){const into=$('merge-'+t.dataset.catmerge).value;await api(`/api/categories/${t.dataset.catmerge}/merge`,{method:'POST',body:JSON.stringify({into})});setStatus('既存の種類にまとめました。');await load();return;}
     if(t.id==='ppick'){$('pfile').click();return;}

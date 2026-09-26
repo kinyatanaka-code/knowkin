@@ -112,3 +112,16 @@ CREATE TABLE IF NOT EXISTS categories (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (user_id, key)
 );
+
+-- Google（Gmail・Googleチャット）との連携
+CREATE TABLE IF NOT EXISTS google_links (
+  user_id        INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  email          TEXT NOT NULL DEFAULT '',
+  refresh_token  TEXT NOT NULL,                        -- 暗号化して保存
+  gmail_after    TIMESTAMPTZ,
+  chat_after     TIMESTAMPTZ,
+  last_sync_at   TIMESTAMPTZ,
+  last_result    TEXT NOT NULL DEFAULT '',
+  last_error     TEXT NOT NULL DEFAULT '',
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);

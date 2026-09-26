@@ -15,6 +15,7 @@ import {
   rotateLinkToken, signupState, tooManyAttempts, userFromLinkToken, userFromSession,
 } from './auth.js';
 import { buildMcpServer } from './mcp.js';
+import { authUrl, googleEnabled, googleStatus, handleCallback, syncAll, syncUser, unlink } from './google.js';
 import { baseUrl, mcpUnauthorized, oauthRouter, revokeAllTokens, userIdFromAccessToken } from './oauth.js';
 
 const { MCP_SECRET, PORT = 3000 } = process.env;
@@ -113,7 +114,8 @@ api.get('/handoff', wrap(async (req, res) => res.type('text/plain').send(coreTex
 api.get('/account', wrap(async (req, res) => {
   const base = baseUrl(req);
   const key = await getLinkToken(req.uid);
-  res.json({ user: req.user, mcpUrl: `${base}/mcp`, keyUrl: `${base}/mcp/${key}`, voiceUrl: `${base}/api/voice`, key });
+  res.json({ user: req.user, mcpUrl: `${base}/mcp`, keyUrl: `${base}/mcp/${key}`, voiceUrl: `${base}/api/voice`, key,
+    google: { enabled: googleEnabled, ...(await googleStatus(req.uid)) } });
 }));
 api.post('/account/rotate', wrap(async (req, res) => { await rotateLinkToken(req.uid); res.json({ ok: true }); }));
 api.post('/account/disconnect', wrap(async (req, res) => { await revokeAllTokens(req.uid); res.json({ ok: true }); }));
@@ -172,6 +174,22 @@ api.post('/categories/:id/merge', wrap(async (req, res) => {
   try { res.json(await mergeCategory(req.uid, Number(req.params.id), String(req.body?.into || ''))); }
   catch (e) { res.status(400).json({ error: e.message }); }
 }));
+// ---- Google（Gmail・Googleチャット）連携 ----
+const googleRedirect = (req) => process.env.GOOGLE_REDIRECT_URI || `${baseUrl(req)}/api/google/callback`;
+app.get('/api/google/callback', wrap(async (req, res) => {
+  if (req.query.error) return res.redirect('/?google=denied');
+  try {
+    const { uid } = await handleCallback(String(req.query.code || ''), String(req.query.state || ''));
+    syncUser(uid).catch((e) => console.error('first google sync', e.message));
+    res.redirect('/?google=connected');
+  } catch (e) { res.redirect('/?google=error&msg=' + encodeURIComponent(e.message)); }
+}));
+api.get('/google/connect', wrap(async (req, res) => {
+  if (!googleEnabled) return res.status(400).send('Google連携が設定されていません（GOOGLE_CLIENT_ID と GOOGLE_CLIENT_SECRET が必要です）');
+  res.redirect(authUrl(req.uid, googleRedirect(req)));
+}));
+api.post('/google/sync', wrap(async (req, res) => res.json(await syncUser(req.uid))));
+api.post('/google/disconnect', wrap(async (req, res) => { await unlink(req.uid); res.json({ ok: true }); }));
 app.use('/api', api);
 
 // ---- MCP（Claude.aiのコネクタ用）: URLの連携キーでアカウントを特定 ----
@@ -219,6 +237,9 @@ app.post('/mcp/:key', async (req, res) => {
 const notAllowed = (_req, res) => res.status(405).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed' }, id: null });
 app.get('/mcp/:key', notAllowed);
 app.delete('/mcp/:key', notAllowed);
+
+// ---- Gmail・Googleチャットの取り込み：毎時30分（3時間ごとの整理ルーティンの前に貯めておく） ----
+cron.schedule('30 * * * *', () => { syncAll().catch((e) => console.error('google sync failed', e)); }, { timezone: 'Asia/Tokyo' });
 
 // ---- 夜間バッチ：毎日3時（日本時間）に核を育て直す（サーバー側のAIを使う場合のみ） ----
 cron.schedule('0 3 * * *', () => {
