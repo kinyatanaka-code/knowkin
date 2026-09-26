@@ -49,7 +49,7 @@ public/index.html  Web画面
 ランダム文字列は `openssl rand -hex 24` などで作ってください。
 
 5. Settings → Networking で Generate Domain を押し、URLを発行する
-6. `https://<発行されたURL>/` を開き、`APP_TOKEN` でログインできれば完了
+6. `https://<発行されたURL>/` を開き、アカウントを作ってログインできれば完了
 
 テーブルは起動時に自動で作られます。
 
@@ -103,7 +103,7 @@ Claude.aiのコネクタ設定から、カスタムコネクタを追加しま�
 2. 「URLの内容を取得」
    - URL：`https://<発行されたURL>/api/voice`
    - 方法：POST
-   - ヘッダ：`Authorization` に `Bearer <APP_TOKEN>`
+   - ヘッダ：`Authorization` に `Bearer <連携キー>`（アカウント画面でコピーできます）
    - 本文を要求：フォーム → キー `file`、種類「ファイル」、値に録音したオーディオ
 3. 「通知を表示」（結果の確認用、任意）
 
@@ -124,7 +124,7 @@ GITHUB_TOKEN=xxxx python3 dev/deploy.py "変更内容"
 
 ## REST API（Web画面が使うもの）
 
-すべて `Authorization: Bearer <APP_TOKEN>` が必要です。
+ログイン中のクッキー、または `Authorization: Bearer <連携キー>` が必要です。
 
 - `GET  /api/state` 記憶・未分類メモ・核
 - `POST /api/memos` `{ "text": "..." }` 記録して分類
