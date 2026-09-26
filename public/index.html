@@ -609,8 +609,12 @@ async function renderAccount(p){
   p.innerHTML=`<h2>アカウント</h2><p class="lead">${esc(a.user.name)}（${esc(a.user.email)}）</p>
   <div class="sheet">
     <h4 style="margin-top:0">Claude.aiのコネクタURL</h4>
-    <p class="hint" style="margin:0 0 6px">Claude.aiのコネクタ設定で、カスタムコネクタとしてこのURLを登録します。パスワードと同じなので人に見せないでください。</p>
+    <p class="hint" style="margin:0 0 6px">Claude.aiでカスタムコネクタを追加し、このURLを貼って「Connect」を押すと、knowkinのログイン画面が開きます。ログインして「許可する」を押せばつながります。</p>
     <div class="copyrow"><input id="acc-mcp" readonly value="${esc(a.mcpUrl)}" aria-label="コネクタURL"><button class="ghost" data-copy="acc-mcp">コピー</button></div>
+    <div class="actions" style="justify-content:flex-start;margin:-4px 0 12px"><button class="ghost" id="disconnect">Claude.aiとの接続をすべて切る</button></div>
+    <details style="margin:0 0 12px"><summary>ログインなしでつなぐURL（上でうまくいかないとき）</summary>
+      <p class="hint" style="margin:8px 0 6px">連携キー入りのURLです。パスワードと同じなので人に見せないでください。</p>
+      <div class="copyrow"><input id="acc-keyurl" readonly value="${esc(a.keyUrl)}" aria-label="連携キー入りのURL"><button class="ghost" data-copy="acc-keyurl">コピー</button></div></details>
     <h4>iPhoneショートカット用</h4>
     <p class="hint" style="margin:0 0 6px">「URLの内容を取得」で、URLに下のアドレス、ヘッダ Authorization に「Bearer 連携キー」を入れ、フォームの file に録音を付けて送ります。</p>
     <div class="copyrow"><input id="acc-voice" readonly value="${esc(a.voiceUrl)}" aria-label="送信先URL"><button class="ghost" data-copy="acc-voice">コピー</button></div>
@@ -639,6 +643,8 @@ document.addEventListener('click',async e=>{
     if(t.id==='logout'){await api('/api/auth/logout',{method:'POST'});state={units:[],failed:[],core:null,recordings:[]};ui.view='rec';authMode='login';showLogin();return;}
     if(t.id==='rotate'){if(ui.armed!=='rotate'){ui.armed='rotate';t.textContent='もう一度押すと作り直します（今のURLは使えなくなります）';t.classList.add('on');return;}
       ui.armed=null;await api('/api/account/rotate',{method:'POST'});ui.account=null;setStatus('連携キーを作り直しました。Claude.aiのコネクタURLも新しいものに変えてください。');render();return;}
+    if(t.id==='disconnect'){if(ui.armed!=='disconnect'){ui.armed='disconnect';t.textContent='もう一度押すと切ります（Claude.aiで接続し直しが必要になります）';t.classList.add('on');return;}
+      ui.armed=null;await api('/api/account/disconnect',{method:'POST'});setStatus('Claude.aiとの接続を切りました。');render();return;}
     if(t.dataset.copy){const i=$(t.dataset.copy);i.select();try{await navigator.clipboard.writeText(i.value);t.textContent='コピーしました';setTimeout(()=>{t.textContent='コピー';},1500);}catch(_){}return;}
     if(t.id==='pwBtn'){try{await api('/api/account/password',{method:'POST',body:JSON.stringify({current:$('pw-cur').value,next:$('pw-new').value})});authMode='login';showLogin('パスワードを変えました。新しいパスワードでログインしてください。');}catch(err){setStatus(err.message,true);}return;}
     if(t.dataset.view||t.dataset.node){

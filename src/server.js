@@ -15,6 +15,7 @@ import {
   rotateLinkToken, signupState, tooManyAttempts, userFromLinkToken, userFromSession,
 } from './auth.js';
 import { buildMcpServer } from './mcp.js';
+import { baseUrl, mcpUnauthorized, oauthRouter, revokeAllTokens, userIdFromAccessToken } from './oauth.js';
 
 const { MCP_SECRET, PORT = 3000 } = process.env;
 for (const k of ['DATABASE_URL', apiKeyEnv].filter(Boolean)) {
@@ -27,6 +28,7 @@ app.use(express.json({ limit: '2mb' }));
 const dir = path.dirname(fileURLToPath(import.meta.url));
 app.use(express.static(path.join(dir, '..', 'public')));
 app.get('/health', (_req, res) => res.json({ ok: true, build: BUILD_TAG }));
+app.use(oauthRouter());
 
 const wrap = (fn) => (req, res) => fn(req, res).catch((e) => {
   console.error(e);
@@ -109,11 +111,12 @@ api.post('/core/grow', wrap(async (req, res) => {
 }));
 api.get('/handoff', wrap(async (req, res) => res.type('text/plain').send(coreText(await getCore(req.uid), await getOpenTasks(req.uid)))));
 api.get('/account', wrap(async (req, res) => {
-  const base = `${req.protocol}://${req.get('host')}`;
+  const base = baseUrl(req);
   const key = await getLinkToken(req.uid);
-  res.json({ user: req.user, mcpUrl: `${base}/mcp/${key}`, voiceUrl: `${base}/api/voice`, key });
+  res.json({ user: req.user, mcpUrl: `${base}/mcp`, keyUrl: `${base}/mcp/${key}`, voiceUrl: `${base}/api/voice`, key });
 }));
 api.post('/account/rotate', wrap(async (req, res) => { await rotateLinkToken(req.uid); res.json({ ok: true }); }));
+api.post('/account/disconnect', wrap(async (req, res) => { await revokeAllTokens(req.uid); res.json({ ok: true }); }));
 api.post('/account/password', wrap(async (req, res) => {
   try { await changePassword(req.uid, req.body?.current, req.body?.next); } catch (e) { return res.status(400).json({ error: e.message }); }
   setSessionCookie(req, res, '', 0);
@@ -153,15 +156,38 @@ async function mcpUser(key) {
   if (MCP_SECRET && key === MCP_SECRET) return firstUser(); // アカウント機能を入れる前に登録したコネクタURL
   return userFromLinkToken(key);
 }
+async function serveMcp(uid, req, res) {
+  const server = buildMcpServer(uid);
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  res.on('close', () => { transport.close(); server.close(); });
+  await server.connect(transport);
+  await transport.handleRequest(req, res, req.body);
+}
+// OAuthでログインしてつなぐURL（Claude.aiのカスタムコネクタにはこちらを登録）
+app.post('/mcp', async (req, res) => {
+  try {
+    const h = req.get('authorization') || '';
+    const uid = h.startsWith('Bearer ') ? await userIdFromAccessToken(h.slice(7)) : null;
+    if (!uid) return mcpUnauthorized(req, res);
+    await serveMcp(uid, req, res);
+  } catch (e) {
+    console.error('MCP error', e);
+    if (!res.headersSent) res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal error' }, id: null });
+  }
+});
+app.get('/mcp', (req, res) => {
+  const h = req.get('authorization') || '';
+  if (!h.startsWith('Bearer ')) return mcpUnauthorized(req, res);
+  res.status(405).json({ jsonrpc: '2.0', error: { code: -32000, message: 'Method not allowed' }, id: null });
+});
+app.delete('/mcp', (_req, res) => res.status(405).end());
+
+// 連携キー入りのURL（OAuthを使わない接続用）
 app.post('/mcp/:key', async (req, res) => {
   try {
     const user = await mcpUser(req.params.key);
     if (!user) return res.status(404).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Unknown connector URL' }, id: null });
-    const server = buildMcpServer(user.id);
-    const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
-    res.on('close', () => { transport.close(); server.close(); });
-    await server.connect(transport);
-    await transport.handleRequest(req, res, req.body);
+    await serveMcp(user.id, req, res);
   } catch (e) {
     console.error('MCP error', e);
     if (!res.headersSent) res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal error' }, id: null });

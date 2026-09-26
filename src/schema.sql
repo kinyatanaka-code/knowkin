@@ -63,3 +63,26 @@ CREATE TABLE IF NOT EXISTS cores (
   data        JSONB NOT NULL,
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Claude.aiのコネクタ用 OAuth
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  client_id     TEXT PRIMARY KEY,
+  client_name   TEXT NOT NULL DEFAULT '',
+  redirect_uris TEXT[] NOT NULL,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS oauth_codes (
+  code_hash      TEXT PRIMARY KEY,
+  client_id      TEXT NOT NULL,
+  user_id        INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  redirect_uri   TEXT NOT NULL,
+  code_challenge TEXT NOT NULL,
+  expires_at     TIMESTAMPTZ NOT NULL
+);
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+  token_hash  TEXT PRIMARY KEY,
+  kind        TEXT NOT NULL,                          -- access / refresh
+  client_id   TEXT NOT NULL,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  expires_at  TIMESTAMPTZ NOT NULL
+);
