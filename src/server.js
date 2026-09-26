@@ -6,6 +6,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { migrate } from './db.js';
+import { BUILD_TAG } from './build.js';
+import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
   addMemo, classifyMemoById, deleteUnit, getState, growCore, growCoreIfChanged, updateUnit, coreText, getCore, getOpenTasks,
 } from './brain.js';
@@ -13,7 +15,7 @@ import { buildMcpServer } from './mcp.js';
 import { canTranscribe, transcribe } from './transcribe.js';
 
 const { APP_TOKEN, MCP_SECRET, PORT = 3000 } = process.env;
-for (const k of ['DATABASE_URL', 'ANTHROPIC_API_KEY', 'APP_TOKEN', 'MCP_SECRET']) {
+for (const k of ['DATABASE_URL', apiKeyEnv, 'APP_TOKEN', 'MCP_SECRET'].filter(Boolean)) {
   if (!process.env[k]) { console.error(`環境変数 ${k} が設定されていません`); process.exit(1); }
 }
 
@@ -22,7 +24,7 @@ app.set('trust proxy', 1);
 app.use(express.json({ limit: '2mb' }));
 const dir = path.dirname(fileURLToPath(import.meta.url));
 app.use(express.static(path.join(dir, '..', 'public')));
-app.get('/health', (_req, res) => res.json({ ok: true }));
+app.get('/health', (_req, res) => res.json({ ok: true, build: BUILD_TAG }));
 
 // ---- 認証（Web画面・API用） ----
 function safeEqual(a, b) {
@@ -43,7 +45,7 @@ const wrap = (fn) => (req, res) => fn(req, res).catch((e) => {
 // ---- REST API ----
 const api = express.Router();
 api.use(auth);
-api.get('/state', wrap(async (_req, res) => res.json({ ...(await getState()), canTranscribe })));
+api.get('/state', wrap(async (_req, res) => res.json({ ...(await getState()), canTranscribe, aiEnabled })));
 api.post('/memos', wrap(async (req, res) => {
   const text = String(req.body?.text || '').trim();
   if (!text) return res.status(400).json({ error: '内容が空です' });
@@ -98,4 +100,4 @@ cron.schedule('0 3 * * *', () => {
 }, { timezone: 'Asia/Tokyo' });
 
 await migrate();
-app.listen(PORT, () => console.log(`knowkin listening on :${PORT}`));
+app.listen(PORT, () => console.log(`knowkin listening on :${PORT}（AI: ${provider} / ${model} / build ${BUILD_TAG}）`));

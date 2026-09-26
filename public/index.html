@@ -219,7 +219,9 @@ function renderView(){
       (done.length?`<h3>最近終わったもの</h3><ul class="list">${done.map(u=>unitHTML(u)).join('')}</ul>`:'');
   }else if(ui.tab==='review'){
     let html='';
-    if(failed.length)html+=`<h3>分類できなかったメモ</h3><ul class="list">${failed.map(m=>`<li class="item"><div class="body"><p class="content">${esc(m.text)}</p><div class="row-actions"><button data-reclass="${m.id}">分類し直す</button></div></div></li>`).join('')}</ul>`;
+    if(failed.length)html+=state.aiEnabled
+      ?`<h3>分類できなかったメモ</h3><ul class="list">${failed.map(m=>`<li class="item"><div class="body"><p class="content">${esc(m.text)}</p><div class="row-actions"><button data-reclass="${m.id}">分類し直す</button></div></div></li>`).join('')}</ul>`
+      :`<h3>未整理のメモ（${failed.length}件）</h3><p style="color:var(--muted);font-size:14px;margin:0">Claudeとの会話で「knowkinの未整理メモを整理して」と頼むと、分類されて記憶に入ります。</p><ul class="list">${failed.map(m=>`<li class="item"><div class="body"><p class="content">${esc(m.text)}</p></div></li>`).join('')}</ul>`;
     if(unreviewed.length)html+=`<div class="actions" style="justify-content:space-between;margin-top:16px"><span style="color:var(--muted);font-size:14px">Claudeの分類を確認して、違うものは直してください。</span><button class="ghost" id="okall">全部確認済みにする</button></div><ul class="list">${unreviewed.map(u=>unitHTML(u,{review:true})).join('')}</ul>`;
     v.innerHTML=html||`<p class="empty">見直すものはありません。週に1回ここを開いて、分類を確認するのがおすすめです。</p>`;
   }else renderCore(v);
@@ -229,9 +231,9 @@ function renderCore(v){
   let html='';
   if(core){html+=`<div class="core"><p class="core-summary">${esc(core.summary)}</p>`+sec('大事にしていること',core.values)+sec('判断のしかた',core.decision_rules)+sec('繰り返し学んでいること',core.lessons)+
     ((core.people||[]).length?`<h3>よく関わる人</h3><ul>${core.people.map(p=>`<li><strong>${esc(p.name)}</strong>：${esc((p.points||[]).join('／'))}</li>`).join('')}</ul>`:'')+
-    sec('まだ答えが出ていないこと',core.open_questions)+`<p class="meta" style="margin-top:14px">最終更新 ${esc(String(core.updatedAt||'').slice(0,10))}　毎日3時にも自動で育て直します</p></div>`;}
-  else html+=`<p class="empty">核は、貯まった記憶からあなたの考え方をまとめたものです。教訓・判断・価値観などが3つ以上たまったら育てられます。</p>`;
-  html+=`<div class="actions" style="justify-content:flex-start;margin-top:18px"><button class="primary" id="grow">核を育てる</button><button class="ghost" id="copy">Claudeに渡す文章を作る</button><button class="ghost" id="logout">ログアウト</button></div><div id="copyarea"></div>`;
+    sec('まだ答えが出ていないこと',core.open_questions)+`<p class="meta" style="margin-top:14px">最終更新 ${esc(String(core.updatedAt||'').slice(0,10))}　${state.aiEnabled?'毎日3時にも自動で育て直します':'Claudeとの会話で「knowkinの核を育てて」と頼むと更新されます'}</p></div>`;}
+  else html+=`<p class="empty">核は、貯まった記憶からあなたの考え方をまとめたものです。教訓・判断・価値観などが3つ以上たまったら${state.aiEnabled?'育てられます':'、Claudeとの会話で「knowkinの核を育てて」と頼んでください'}。</p>`;
+  html+=`<div class="actions" style="justify-content:flex-start;margin-top:18px">${state.aiEnabled?'<button class="primary" id="grow">核を育てる</button>':''}<button class="ghost" id="copy">Claudeに渡す文章を作る</button><button class="ghost" id="logout">ログアウト</button></div><div id="copyarea"></div>`;
   v.innerHTML=html;
 }
 function render(){renderStrata();renderView();}
@@ -241,7 +243,7 @@ async function remember(){
   if(!text){setStatus('残す内容を入力してください。',true);$('input').focus();return;}
   busy=true;$('save').disabled=true;setStatus('保存して、Claudeが分類しています…');
   try{const r=await api('/api/memos',{method:'POST',body:JSON.stringify({text})});$('input').value='';
-    setStatus(r.error?r.error+'。「見直し」から分類し直せます。':`${r.added}件の記憶を残しました${r.repeated?`。${r.repeated}件は前にもあった内容なので、重みを上げました`:''}。`,!!r.error);
+    setStatus(r.pending?'原本を保存しました。Claudeとの会話で「knowkinの未整理メモを整理して」と頼むと、分類されて記憶に入ります。':r.error?r.error+'。「見直し」から分類し直せます。':`${r.added}件の記憶を残しました${r.repeated?`。${r.repeated}件は前にもあった内容なので、重みを上げました`:''}。`,!!r.error);
     await load();}
   catch(e){if(e.message!=='unauthorized')setStatus('保存に失敗しました：'+e.message,true);}
   busy=false;$('save').disabled=false;

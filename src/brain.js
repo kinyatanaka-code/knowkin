@@ -1,8 +1,5 @@
-import Anthropic from '@anthropic-ai/sdk';
 import { pool } from './db.js';
-
-const anthropic = new Anthropic();
-const MODEL = process.env.CLAUDE_MODEL || 'claude-sonnet-5';
+import { complete, aiEnabled } from './ai.js';
 
 export const TYPES = {
   event: { label: '記憶', layer: '出来事' },
@@ -23,14 +20,9 @@ export const UNIT_COLS = `id, memo_id, type, content, quote, reason, people, tag
 export const todayJST = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date());
 
 async function askJSON(prompt, maxTokens = 4000) {
-  const msg = await anthropic.messages.create({
-    model: MODEL,
-    max_tokens: maxTokens,
-    messages: [{ role: 'user', content: prompt }],
-  });
-  const text = msg.content.filter((b) => b.type === 'text').map((b) => b.text).join('');
+  const text = await complete(prompt, maxTokens);
   const m = text.match(/\{[\s\S]*\}/);
-  if (!m) throw new Error('ClaudeからJSONが返りませんでした');
+  if (!m) throw new Error('AIからJSONが返りませんでした');
   return JSON.parse(m[0]);
 }
 
@@ -38,11 +30,7 @@ const imp = (v) => ([1, 2, 3].includes(Number(v)) ? Number(v) : 2);
 const strArr = (v) => (Array.isArray(v) ? v.map(String).filter(Boolean) : []);
 const validDate = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
 
-function classifyPrompt(text, today, existing) {
-  return `あなたは「knowkin」という、ある一人の人のための第二の脳の整理係です。
-次のメモ（本人が話した内容の文字起こしや手書きメモ）を、意味のまとまりごとに「記憶ユニット」に分解してください。
-
-## 種類（type）
+export const CLASSIFY_RULES = `## 種類（type）
 - event: 起きた出来事の記憶
 - input: 本や会話から得た知識・情報
 - lesson: 他人からのフィードバック、失敗や成功から得た教訓
@@ -60,10 +48,21 @@ function classifyPrompt(text, today, existing) {
 - 他人の発言は quote に、なるべく言われた言葉のまま入れる（なければ空文字）
 - decision には reason（なぜそう決めたか）を入れる。メモに理由がなければ空文字にし、推測で作らない
 - people には関係する人物名、tags には会社名やテーマなどのキーワードを入れる
-- task と goal の期限がわかれば due に YYYY-MM-DD で入れる（今日は ${today}）。「来週金曜」などは日付に直す。不明なら null
+- task と goal の期限がわかれば due に YYYY-MM-DD で入れる。「来週金曜」などは日付に直す。不明なら null
 - importance は 1〜3（3が最も重要）
-- 下の「既存の記憶」とほぼ同じ内容（同じフィードバックを再び受けた等）なら same_as にその id（数値）を入れる。違えば null
-- メモに書かれていないことは付け足さない
+- 既存の記憶とほぼ同じ内容（同じフィードバックを再び受けた等）なら same_as にその id（数値）を入れる。違えば null
+- メモに書かれていないことは付け足さない`;
+
+export const CORE_RULES = `- 繰り返されているもの（count が大きいもの）、重要度が高いものを優先する
+- 記憶に書かれていないことは推測で付け足さない
+- 人物ごとに、その人が大事にしていること・よく言うことをまとめる
+- 各項目は短く具体的な1文にする。各リストは最大7項目`;
+
+function classifyPrompt(text, today, existing) {
+  return `あなたは「knowkin」という、ある一人の人のための第二の脳の整理係です。
+次のメモ（本人が話した内容の文字起こしや手書きメモ）を、意味のまとまりごとに「記憶ユニット」に分解してください。今日は ${today} です。
+
+${CLASSIFY_RULES}
 
 ## 既存の記憶
 ${JSON.stringify(existing)}
@@ -76,12 +75,13 @@ ${text}
 {"units":[{"type":"lesson","content":"","quote":"","reason":"","people":[],"tags":[],"due":null,"importance":2,"same_as":null}]}`;
 }
 
-export async function addMemo(text, source = 'text') {
+export async function addMemo(text, source = 'text', units = null) {
   const { rows } = await pool.query('INSERT INTO memos(text, source) VALUES($1, $2) RETURNING *', [text, source]);
   const memo = rows[0];
+  if (Array.isArray(units) && units.length) return { memo_id: memo.id, ...(await applyUnits(memo, units)) };
+  if (!aiEnabled) return { memo_id: memo.id, added: 0, repeated: 0, pending: true };
   try {
-    const r = await classifyMemo(memo);
-    return { memo_id: memo.id, ...r };
+    return { memo_id: memo.id, ...(await classifyMemo(memo)) };
   } catch (e) {
     console.error('classify failed', e);
     return { memo_id: memo.id, added: 0, repeated: 0, error: '原本は保存しましたが、分類に失敗しました' };
@@ -89,24 +89,52 @@ export async function addMemo(text, source = 'text') {
 }
 
 export async function classifyMemoById(id) {
+  if (!aiEnabled) throw new Error('AIなしモードです。Claudeとの会話で「knowkinの未整理メモを整理して」と頼んでください');
   const { rows } = await pool.query('SELECT * FROM memos WHERE id = $1', [id]);
   if (!rows[0]) throw new Error('メモが見つかりません');
   return classifyMemo(rows[0]);
 }
 
-async function classifyMemo(memo) {
-  const existing = (await pool.query(
+/** 重複判定用の既存の記憶 */
+export async function getDedupList() {
+  return (await pool.query(
     `SELECT id, type, left(content, 90) AS content FROM units
      WHERE type = ANY($1) ORDER BY created_at DESC LIMIT 80`,
     [['lesson', 'value', 'decision', 'person', 'idea', 'goal', 'question', 'input']],
   )).rows;
+}
+
+async function classifyMemo(memo) {
+  const existing = await getDedupList();
+  const res = await askJSON(classifyPrompt(memo.text, todayJST(), existing));
+  return applyUnits(memo, Array.isArray(res.units) ? res.units : []);
+}
+
+/** 未整理のメモ（Claudeとの会話で整理する用） */
+export async function getUnclassified(limit = 20) {
+  const { rows } = await pool.query(
+    `SELECT id, text, source, to_char(recorded_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS recorded_at
+     FROM memos WHERE NOT classified ORDER BY recorded_at ASC LIMIT $1`, [limit]);
+  return rows;
+}
+
+export async function countUnclassified() {
+  const { rows } = await pool.query('SELECT count(*)::int AS n FROM memos WHERE NOT classified');
+  return rows[0].n;
+}
+
+/** 分類済みのユニットを、指定のメモの記憶として保存する */
+export async function saveUnitsForMemo(memoId, units) {
+  const { rows } = await pool.query('SELECT * FROM memos WHERE id = $1', [memoId]);
+  if (!rows[0]) throw new Error(`メモ ${memoId} が見つかりません`);
+  if (rows[0].classified) throw new Error(`メモ ${memoId} はすでに整理済みです`);
+  return applyUnits(rows[0], units);
+}
+
+async function applyUnits(memo, list) {
   const today = todayJST();
-  const res = await askJSON(classifyPrompt(memo.text, today, existing));
-  const list = Array.isArray(res.units) ? res.units : [];
-  const existingIds = new Set(existing.map((e) => e.id));
   let added = 0;
   let repeated = 0;
-
   const client = await pool.connect();
   try {
     await client.query('BEGIN');
@@ -114,8 +142,8 @@ async function classifyMemo(memo) {
       if (!r || !r.content) continue;
       const type = TYPES[r.type] ? r.type : 'event';
       const sameId = Number(r.same_as);
-      if (sameId && existingIds.has(sameId)) {
-        await client.query(
+      if (sameId) {
+        const hit = await client.query(
           `UPDATE units SET
              count = count + 1,
              dates = array_append(dates, $2::date),
@@ -124,8 +152,7 @@ async function classifyMemo(memo) {
            WHERE id = $1`,
           [sameId, today, imp(r.importance), String(r.quote || '')],
         );
-        repeated++;
-        continue;
+        if (hit.rowCount) { repeated++; continue; }
       }
       await client.query(
         `INSERT INTO units(memo_id, type, content, quote, reason, people, tags, due, importance, dates)
@@ -146,29 +173,17 @@ async function classifyMemo(memo) {
   return { added, repeated };
 }
 
-export async function growCore() {
+/** 核を作るための材料 */
+export async function getCoreMaterial() {
   const { rows } = await pool.query(
     `SELECT type, content, quote, reason, people, count, importance FROM units
      WHERE type = ANY($1) ORDER BY count DESC, importance DESC, created_at DESC LIMIT 300`,
     [['lesson', 'value', 'decision', 'person', 'goal', 'question', 'idea']],
   );
-  if (rows.length < 3) return null;
-  const r = await askJSON(`あなたは「knowkin」という個人の第二の脳の整理係です。
-以下は本人が残した記憶ユニットです（count は同じ内容が繰り返された回数、importance は重要度）。
-これを読み直し、この人の「考え方の核」をまとめてください。
+  return rows;
+}
 
-## ルール
-- 繰り返されているもの（count が大きいもの）、重要度が高いものを優先する
-- 記憶に書かれていないことは推測で付け足さない
-- 人物ごとに、その人が大事にしていること・よく言うことをまとめる
-- 各項目は短く具体的な1文にする。各リストは最大7項目
-
-## 記憶ユニット
-${JSON.stringify(rows)}
-
-## 出力
-次の形のJSONだけを出力してください。
-{"summary":"この人の考え方を1〜2文で","values":[],"decision_rules":[],"lessons":[],"people":[{"name":"","points":[]}],"open_questions":[]}`);
+export async function saveCore(r) {
   const data = {
     summary: String(r.summary || ''),
     values: strArr(r.values),
@@ -186,8 +201,29 @@ ${JSON.stringify(rows)}
   return data;
 }
 
+export async function growCore() {
+  if (!aiEnabled) throw new Error('AIなしモードです。Claudeとの会話で「knowkinの核を育てて」と頼んでください');
+  const rows = await getCoreMaterial();
+  if (rows.length < 3) return null;
+  const r = await askJSON(`あなたは「knowkin」という個人の第二の脳の整理係です。
+以下は本人が残した記憶ユニットです（count は同じ内容が繰り返された回数、importance は重要度）。
+これを読み直し、この人の「考え方の核」をまとめてください。
+
+## ルール
+${CORE_RULES}
+
+## 記憶ユニット
+${JSON.stringify(rows)}
+
+## 出力
+次の形のJSONだけを出力してください。
+{"summary":"この人の考え方を1〜2文で","values":[],"decision_rules":[],"lessons":[],"people":[{"name":"","points":[]}],"open_questions":[]}`);
+  return saveCore(r);
+}
+
 /** 前回の核の更新以降に新しい記憶があれば育てる（夜間バッチ用） */
 export async function growCoreIfChanged() {
+  if (!aiEnabled) return null;
   const { rows } = await pool.query(
     `SELECT (SELECT updated_at FROM core WHERE id = 1) AS core_at,
             (SELECT max(created_at) FROM units) AS unit_at`,
