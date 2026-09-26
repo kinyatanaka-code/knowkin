@@ -113,7 +113,7 @@ async function classifyMemo(memo) {
 }
 
 /** 録音・ボイスメモを文字起こし・要約し、記憶ユニットに分けて保存する */
-export async function addVoice(uid, buffer, filename, mimetype) {
+export async function addVoice(uid, buffer, filename, mimetype, onStage = () => {}) {
   if (canSummarizeAudio) {
     const existing = await getDedupList(uid);
     const r = await askAudioJSON(buffer, `あなたは「knowkin」という、ある一人の人のための第二の脳の整理係です。
@@ -132,8 +132,9 @@ ${JSON.stringify(existing)}
 
 ## 出力
 次の形のJSONだけを出力してください。
-{"title":"","summary":[],"transcript":"","units":[{"type":"lesson","content":"","quote":"","reason":"","people":[],"tags":[],"due":null,"importance":2,"same_as":null}]}`);
+{"title":"","summary":[],"transcript":"","units":[{"type":"lesson","content":"","quote":"","reason":"","people":[],"tags":[],"due":null,"importance":2,"same_as":null}]}`, onStage);
     const units = Array.isArray(r.units) ? r.units : [];
+    onStage('save');
     const { rows } = await pool.query(
       `INSERT INTO memos(user_id, text, source, title, summary) VALUES($4, $1, 'voice', $2, $3) RETURNING *`,
       [String(r.transcript || '（文字起こしなし）'), String(r.title || '録音'), strArr(r.summary), uid],
@@ -146,7 +147,9 @@ ${JSON.stringify(existing)}
     };
   }
   if (canTranscribe) {
+    onStage('ai', { minutes: 0 });
     const text = await transcribe(buffer, filename, mimetype);
+    onStage('save');
     if (!text) throw new Error('音声から文字を読み取れませんでした');
     const r = await addMemo(uid, text, 'voice');
     return { ...r, title: '録音', summary: [], transcript: text, units: [] };

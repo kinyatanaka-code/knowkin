@@ -127,7 +127,24 @@ api.post('/voice', (req, res, next) => upload.single('file')(req, res, (err) => 
   next();
 }), wrap(async (req, res) => {
   if (!req.file) return res.status(400).json({ error: '音声ファイル（file）がありません' });
-  res.json(await addVoice(req.uid, req.file.buffer, req.file.originalname || 'memo.m4a', req.file.mimetype));
+  const args = [req.uid, req.file.buffer, req.file.originalname || 'memo.m4a', req.file.mimetype];
+  if (!(req.get('accept') || '').includes('application/x-ndjson')) return res.json(await addVoice(...args));
+  // Web画面向け：進み具合を1行ずつ送る
+  res.status(200).set({ 'Content-Type': 'application/x-ndjson; charset=utf-8', 'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no' });
+  res.flushHeaders();
+  const send = (o) => res.write(JSON.stringify(o) + '\n');
+  const beat = setInterval(() => send({ stage: 'beat' }), 8000);
+  send({ stage: 'received' });
+  try {
+    const result = await addVoice(...args, (stage, info = {}) => send({ stage, ...info }));
+    send({ stage: 'done', result });
+  } catch (e) {
+    console.error(e);
+    send({ stage: 'error', error: e.message || '処理に失敗しました' });
+  } finally {
+    clearInterval(beat);
+    res.end();
+  }
 }));
 app.use('/api', api);
 

@@ -7,6 +7,7 @@ import ffmpegPath from 'ffmpeg-static';
 
 const GEMINI_KEY = process.env.GEMINI_API_KEY;
 const AUDIO_MODEL = process.env.AUDIO_MODEL || 'gemini-2.5-flash';
+const GEMINI_BASE = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com';
 export const canSummarizeAudio = Boolean(GEMINI_KEY);
 
 /** どんな形式の音声でも 16kHz・モノラル・32kbps のmp3にする（1分あたり約0.24MB） */
@@ -31,11 +32,13 @@ export async function toMp3(buffer) {
 }
 
 /** 音声をGeminiに渡し、プロンプトに従ったJSONを返す */
-export async function askAudioJSON(buffer, prompt) {
+export async function askAudioJSON(buffer, prompt, onStage = () => {}) {
   if (!canSummarizeAudio) throw new Error('録音の要約には GEMINI_API_KEY の設定が必要です');
+  onStage('convert');
   const mp3 = await toMp3(buffer);
   if (mp3.length > 19 * 1024 * 1024) throw new Error('録音が長すぎます（目安は80分まで）。分けてアップロードしてください');
-  const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${AUDIO_MODEL}:generateContent`, {
+  onStage('ai', { minutes: Math.max(1, Math.round(mp3.length / (0.24 * 1024 * 1024))) });
+  const res = await fetch(`${GEMINI_BASE}/v1beta/models/${AUDIO_MODEL}:generateContent`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_KEY },
     body: JSON.stringify({

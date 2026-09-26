@@ -94,6 +94,21 @@ button{cursor:pointer}
 .ghost.on{border-color:var(--pink);color:var(--pink)}
 .status{font-size:14px;color:var(--muted);margin:12px 2px 0;min-height:1.7em}
 .status.err{color:var(--red)}
+.prog{margin-top:16px;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--bg2)}
+.prog-file{display:flex;justify-content:space-between;gap:10px;font-size:13px;color:var(--muted);margin:0 0 8px}
+.prog-file span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.prog-bar{height:8px;border-radius:999px;background:var(--surface2);overflow:hidden}
+.prog-bar span{display:block;height:100%;width:0;border-radius:999px;background:linear-gradient(90deg,var(--cyan),var(--violet),var(--pink));transition:width .3s ease}
+.prog-row{display:flex;justify-content:space-between;gap:10px;margin:8px 0 0;font-size:14px}
+.prog-row span:last-child{color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+.prog-steps{list-style:none;margin:12px 0 0;padding:0;display:grid;grid-template-columns:repeat(4,1fr);gap:6px;font-size:12px;color:var(--muted)}
+.prog-steps li{display:flex;flex-direction:column;align-items:center;gap:4px;text-align:center}
+.prog-steps li::before{content:"";width:10px;height:10px;border-radius:50%;border:1.5px solid var(--line)}
+.prog-steps li.now{color:var(--ink)}
+.prog-steps li.now::before{border-color:var(--cyan);background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
+@media (prefers-reduced-motion:no-preference){.prog-steps li.now::before{animation:pulse 1.2s ease-in-out infinite}}
+.prog-steps li.done{color:var(--ink)}
+.prog-steps li.done::before{border-color:var(--l-rel);background:var(--l-rel)}
 .result{margin-top:16px;border-left:3px solid var(--cyan);padding:4px 0 4px 14px;border-radius:0}
 .result h3,.rec-item h3{font-weight:700;font-size:18px;margin:0}
 .result ul,.rec-item ul{margin:6px 0 0;padding-left:1.2em}
@@ -430,16 +445,79 @@ async function saveVoiceText(){
   catch(e){if(e.message!=='unauthorized')setStatus('保存に失敗しました：'+e.message,true);}
   busy=false;const s=$('vsave');if(s)s.disabled=false;
 }
+// ---- アップロードの進み具合 ----
+const STAGES=[{id:'upload',label:'送信'},{id:'convert',label:'変換'},{id:'ai',label:'文字起こし・要約'},{id:'save',label:'振り分け'}];
+let prog=null;
+function progressHTML(name,size){
+  return `<div class="prog" id="prog" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-label="アップロードの進み具合">
+    <div class="prog-file"><span>${esc(name)}</span><span>${(size/1024/1024).toFixed(1)}MB</span></div>
+    <div class="prog-bar"><span id="prog-fill"></span></div>
+    <div class="prog-row"><span id="prog-label">アップロード中 0%</span><span id="prog-time"></span></div>
+    <ol class="prog-steps">${STAGES.map(s=>`<li data-step="${s.id}">${s.label}</li>`).join('')}</ol></div>`;
+}
+function setProg(pct,label){
+  if(!prog)return;prog.pct=Math.max(prog.pct,Math.min(100,pct));
+  const f=$('prog-fill'),l=$('prog-label'),bar=$('prog');
+  if(f)f.style.width=prog.pct.toFixed(1)+'%';if(bar)bar.setAttribute('aria-valuenow',Math.round(prog.pct));if(l&&label)l.textContent=label;
+}
+function setStep(id){
+  if(!prog)return;prog.stage=id;prog.stageAt=Date.now();const idx=STAGES.findIndex(s=>s.id===id);
+  document.querySelectorAll('.prog-steps li').forEach((li,i)=>{li.className=i<idx?'done':i===idx?'now':'';});
+}
+function tickProg(){
+  if(!prog)return;const s=Math.floor((Date.now()-prog.start)/1000);const t=$('prog-time');if(t)t.textContent=`経過 ${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+  if(prog.stage==='ai'){const est=prog.est||30;const e=(Date.now()-prog.stageAt)/1000;
+    setProg(42+48*(1-Math.exp(-e/est)),`文字起こしと要約をしています（目安 ${est<60?'1分以内':Math.round(est/60)+'分ほど'}）`);}
+}
+function uploadVoice(fd,onUp,onLine){
+  return new Promise((resolve,reject)=>{
+    const x=new XMLHttpRequest();x.open('POST','/api/voice');x.setRequestHeader('Accept','application/x-ndjson');
+    let seen=0,buf='';
+    const read=()=>{buf+=x.responseText.slice(seen);seen=x.responseText.length;let i;
+      while((i=buf.indexOf('\n'))>=0){const line=buf.slice(0,i);buf=buf.slice(i+1);if(line.trim()){try{onLine(JSON.parse(line));}catch(_){}}}};
+    x.upload.onprogress=e=>{if(e.lengthComputable)onUp(e.loaded/e.total);};
+    x.upload.onload=()=>onUp(1);
+    x.onprogress=read;
+    x.onload=()=>{
+      if(x.status===401){showLogin('ログインが切れました。もう一度ログインしてください。');return reject(new Error('unauthorized'));}
+      if(x.status>=400){let m='アップロードに失敗しました';try{m=JSON.parse(x.responseText).error||m;}catch(_){}return reject(new Error(m));}
+      read();resolve();
+    };
+    x.onerror=()=>reject(new Error('通信が切れました。電波のよい場所でもう一度お試しください。'));
+    x.send(fd);
+  });
+}
 async function sendAudio(blob,name){
   if(busy)return;
   if(blob.size>100*1024*1024){setStatus('ファイルが大きすぎます（100MBまで）。',true);return;}
-  busy=true;const t=$('timer');if(t)t.textContent='';
-  setStatus('文字起こしと要約をしています。長い録音だと1〜2分かかります…');
+  busy=true;const t=$('timer');if(t)t.textContent='';setStatus('');
   document.querySelectorAll('#recbtn,#pick').forEach(b=>b.disabled=true);
-  try{const fd=new FormData();fd.append('file',blob,name);
-    ui.result=await api('/api/voice',{method:'POST',body:fd});
-    setStatus('記憶に残しました。');await load();}
-  catch(e){if(e.message!=='unauthorized'){setStatus(e.message,true);render();}}
+  ui.result=null;const box=$('result');if(box)box.innerHTML=progressHTML(name,blob.size);
+  prog={pct:0,start:Date.now(),stage:'upload',stageAt:Date.now(),est:30,timer:null};setStep('upload');
+  prog.timer=setInterval(tickProg,300);
+  let result=null,failure=null;
+  try{
+    const fd=new FormData();fd.append('file',blob,name);
+    await uploadVoice(fd,
+      p=>{if(prog.stage==='upload')setProg(p*30,p<1?`アップロード中 ${Math.round(p*100)}%`:'アップロードが終わりました');},
+      m=>{
+        if(m.stage==='received'){setProg(32,'サーバーで受け取りました');}
+        else if(m.stage==='convert'){setStep('convert');setProg(35,'音声を変換しています');}
+        else if(m.stage==='ai'){setStep('ai');prog.est=Math.max(15,15+(m.minutes||1)*6);setProg(42,'文字起こしと要約をしています');}
+        else if(m.stage==='save'){setStep('save');setProg(93,'記憶に振り分けています');}
+        else if(m.stage==='done'){result=m.result;}
+        else if(m.stage==='error'){failure=m.error;}
+      });
+    if(failure)throw new Error(failure);
+    if(!result)throw new Error('処理の結果を受け取れませんでした。「最近の録音」に入っていないか確認してください。');
+    setStep('done');setProg(100,'完了しました');
+    document.querySelectorAll('.prog-steps li').forEach(li=>li.className='done');
+    ui.result=result;clearInterval(prog.timer);prog=null;
+    setStatus('記憶に残しました。');await load();
+  }catch(e){
+    if(prog){clearInterval(prog.timer);prog=null;}
+    if(e.message!=='unauthorized'){setStatus(e.message,true);render();}
+  }
   busy=false;
 }
 
@@ -565,6 +643,7 @@ document.addEventListener('click',async e=>{
     if(t.id==='pwBtn'){try{await api('/api/account/password',{method:'POST',body:JSON.stringify({current:$('pw-cur').value,next:$('pw-new').value})});authMode='login';showLogin('パスワードを変えました。新しいパスワードでログインしてください。');}catch(err){setStatus(err.message,true);}return;}
     if(t.dataset.view||t.dataset.node){
       if((recorder&&recorder.state==='recording')||live){setStatus('録音中です。止めてから切り替えてください。',true);return;}
+      if(prog){setStatus('アップロードの処理中です。終わるまでこのままお待ちください。',true);return;}
       if(t.dataset.node){if(ui.layer!==t.dataset.node)ui.q='';ui.view='layer';ui.layer=t.dataset.node;}else ui.view=t.dataset.view;
       ui.armed=null;if(ui.view!=='rec')ui.result=null;setStatus('');render();
       if(window.innerWidth<700)$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
