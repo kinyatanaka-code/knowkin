@@ -92,7 +92,8 @@ api.get('/state', wrap(async (req, res) => res.json({ ...(await getState(req.uid
 api.post('/memos', wrap(async (req, res) => {
   const text = String(req.body?.text || '').trim();
   if (!text) return res.status(400).json({ error: '内容が空です' });
-  res.json(await addMemo(req.uid, text, 'text'));
+  const source = req.body?.source === 'voice' ? 'voice' : 'text';
+  res.json(await addMemo(req.uid, text, source));
 }));
 api.post('/memos/:id/classify', wrap(async (req, res) => res.json(await classifyMemoById(req.uid, Number(req.params.id)))));
 api.patch('/units/:id', wrap(async (req, res) => {

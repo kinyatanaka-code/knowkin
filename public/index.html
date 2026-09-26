@@ -101,6 +101,7 @@ details{margin-top:8px;color:var(--muted);font-size:14px}
 details p{white-space:pre-wrap;color:var(--ink);margin:6px 0 0}
 .rec-item{padding:14px 0;border-bottom:1px solid var(--line)}
 .meta{margin:4px 0 0;color:var(--muted);font-size:13px;display:flex;flex-wrap:wrap;gap:4px 12px}
+.vtext{display:block;width:100%;min-height:150px;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg2);resize:vertical;line-height:1.7}
 .composer textarea{display:block;width:100%;min-height:130px;border:0;background:transparent;resize:vertical;outline:none;line-height:1.7}
 .composer textarea::placeholder{color:var(--muted)}
 .prompts{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
@@ -308,12 +309,32 @@ if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>layoutNet(
 
 // ---- 記憶する（録音・アップロード） ----
 let recorder=null,chunks=[],recStart=0,recTimer=null;
+const SRC=window.SpeechRecognition||window.webkitSpeechRecognition;
+function freeRecHTML(){
+  return `<div class="sheet">
+    <div class="rec-row">
+      <button type="button" class="recbtn" id="recbtn" ${SRC?'':'disabled'}><span class="dot"></span><span id="reclabel">話しながら文字にする</span></button>
+      <span class="timer" id="timer"></span>
+    </div>
+    ${SRC?'':`<p class="hint" style="margin:10px 0 0">このブラウザは音声の文字起こしに対応していません。iPhoneのSafariかPCのChromeで開くか、下に文字起こしを貼り付けてください。</p>`}
+    <label class="field" style="margin-top:14px"><span>文字起こし</span>
+      <textarea id="vtext" class="vtext" placeholder="ボタンを押して話すと、ここに文字が入ります。iPhoneのボイスメモの文字起こしを貼り付けることもできます。"></textarea></label>
+    <div class="actions"><button class="primary" type="button" id="vsave">録音として残す</button></div>
+    <p class="hint" style="margin:10px 0 0">iPhoneのボイスメモの場合：ボイスメモアプリで録音を開き、文字起こしを表示してコピーし、ここに貼り付けます。</p>
+    <p class="hint" style="margin:6px 0 0">要約と5つの層への分類は、Claudeとの会話で「knowkinの未整理メモを整理して」と頼むと行います。APIを使わないので追加料金はかかりません。</p>
+  </div>`;
+}
 function renderRec(p){
   const can=state.canSummarizeAudio||state.canTranscribe;
   const recs=state.recordings||[];
+  if(!can){
+    p.innerHTML=`<h2>記憶する</h2><p class="lead">対面の会話や上司からのフィードバックを、話しながら文字にして残します。</p>
+    ${freeRecHTML()}${writeHTML()}${recentHTML(recs)}`;
+    $('input').addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter')remember();});
+    setupMic();return;
+  }
   p.innerHTML=`<h2>記憶する</h2><p class="lead">対面の会話や上司からのフィードバックを録音するか、ボイスメモをアップロードしてください。文字起こしして要約し、5つの層に分けて残します。</p>
   <div class="sheet">
-    ${can?'':`<p class="status err" style="margin:0 0 12px">録音を要約するには、サーバーに GEMINI_API_KEY の設定が必要です。</p>`}
     <div class="rec-row">
       <button type="button" class="recbtn" id="recbtn" ${can&&navigator.mediaDevices&&window.MediaRecorder?'':'disabled'}><span class="dot"></span><span id="reclabel">録音をはじめる</span></button>
       <span class="timer" id="timer"></span>
@@ -322,7 +343,17 @@ function renderRec(p){
       <input type="file" id="file" accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.webm,.flac" hidden></div>
     <div id="result">${ui.result?resultHTML(ui.result):''}</div>
   </div>
-  <h4>書いて残す</h4>
+  ${writeHTML()}${recentHTML(recs)}`;
+  const drop=$('drop');
+  ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
+  ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
+  drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)sendAudio(f,f.name);});
+  $('file').addEventListener('change',e=>{const f=e.target.files[0];if(f)sendAudio(f,f.name);e.target.value='';});
+  $('input').addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter')remember();});
+  setupMic();
+}
+function writeHTML(){
+  return `<h4>書いて残す</h4>
   <div class="sheet composer">
     <div class="prompts">
       <button class="chip" type="button" data-p="今日あったこと：">今日、何があったか</button>
@@ -332,18 +363,13 @@ function renderRec(p){
     <label for="input" class="sr">メモ</label>
     <textarea id="input" placeholder="話すように書いてください。上司に言われたこと、思いついたこと、やることが混ざっていても大丈夫です。"></textarea>
     <div class="actions"><button class="ghost" type="button" id="mic" hidden>話して入力</button><button class="primary" type="button" id="save">脳に残す</button></div>
-  </div>
-  <h4>最近の録音</h4>
-  ${recs.length?recs.map(r=>`<div class="rec-item"><h3>${esc(r.title||'録音')}</h3><div class="meta"><span>${esc(r.recorded_at)}</span></div>
+  </div>`;
+}
+function recentHTML(recs){
+  return `<h4>最近の録音</h4>
+  ${recs.length?recs.map(r=>`<div class="rec-item"><h3>${esc(r.title||'録音')}</h3><div class="meta"><span>${esc(r.recorded_at)}</span>${r.classified?'':'<span style="color:var(--pink)">未整理：Claudeで整理すると要約されます</span>'}</div>
     ${(r.summary||[]).length?`<ul>${r.summary.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`:''}
     <details><summary>文字起こしを見る</summary><p>${esc(r.text)}</p></details></div>`).join(''):`<p class="empty">まだ録音はありません。</p>`}`;
-  const drop=$('drop');
-  ['dragenter','dragover'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.add('over');}));
-  ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
-  drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)sendAudio(f,f.name);});
-  $('file').addEventListener('change',e=>{const f=e.target.files[0];if(f)sendAudio(f,f.name);e.target.value='';});
-  $('input').addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter')remember();});
-  setupMic();
 }
 function resultHTML(r){
   return `<div class="result"><h3>${esc(r.title||'録音')}</h3>
@@ -369,6 +395,40 @@ async function toggleRecord(){
     recTimer=setInterval(()=>{const s=Math.floor((Date.now()-recStart)/1000);$('timer').textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')} 録音中`;},500);
     setStatus('');
   }catch(e){setStatus('マイクを使えませんでした。ブラウザの設定でマイクを許可するか、ボイスメモをアップロードしてください。',true);}
+}
+// 無料の録音：ブラウザの音声認識で、話しながら文字にする
+let live=null;
+function toggleLive(){
+  if(live){live.stop=true;try{live.rec.stop();}catch(_){}return;}
+  const box=$('vtext');const base=box.value;const sep=base&&!base.endsWith('\n')?'\n':'';
+  live={stop:false,fin:'',start:Date.now(),rec:null,timer:null};
+  const begin=()=>{
+    const rec=new SRC();rec.lang='ja-JP';rec.continuous=true;rec.interimResults=true;live.rec=rec;
+    rec.onresult=ev=>{let interim='';for(let i=ev.resultIndex;i<ev.results.length;i++){const r=ev.results[i];if(r.isFinal)live.fin+=r[0].transcript+'。';else interim+=r[0].transcript;}
+      const b=$('vtext');if(b)b.value=base+sep+live.fin+interim;};
+    rec.onerror=ev=>{if(ev.error==='not-allowed'||ev.error==='service-not-allowed'){live.stop=true;setStatus('マイクの使用が許可されていません。ブラウザの設定でマイクを許可してください。',true);}};
+    rec.onend=()=>{if(live&&!live.stop){try{begin();}catch(_){finishLive();}}else finishLive();}; // iPhoneは無音で止まるので続ける
+    rec.start();
+  };
+  try{begin();}catch(_){live=null;setStatus('音声の文字起こしを始められませんでした。',true);return;}
+  $('recbtn').classList.add('on');$('reclabel').textContent='止める';setStatus('聞いています。話し終わったら「止める」を押してください。');
+  live.timer=setInterval(()=>{const s=Math.floor((Date.now()-live.start)/1000);const t=$('timer');if(t)t.textContent=`${Math.floor(s/60)}:${String(s%60).padStart(2,'0')} 文字にしています`;},500);
+}
+function finishLive(){
+  if(!live)return;clearInterval(live.timer);live=null;
+  const b=$('recbtn');if(b){b.classList.remove('on');$('reclabel').textContent='話しながら文字にする';}
+  const t=$('timer');if(t)t.textContent='';
+  setStatus('文字にしました。内容を確認して「録音として残す」を押してください。');
+}
+async function saveVoiceText(){
+  if(busy)return;if(live){live.stop=true;try{live.rec.stop();}catch(_){}}
+  const text=$('vtext').value.trim();
+  if(!text){setStatus('文字起こしが空です。話すか、貼り付けてください。',true);return;}
+  busy=true;$('vsave').disabled=true;
+  try{await api('/api/memos',{method:'POST',body:JSON.stringify({text,source:'voice'})});
+    setStatus('録音を残しました。Claudeとの会話で「knowkinの未整理メモを整理して」と頼むと、要約して5つの層に分けます。');await load();}
+  catch(e){if(e.message!=='unauthorized')setStatus('保存に失敗しました：'+e.message,true);}
+  busy=false;const s=$('vsave');if(s)s.disabled=false;
 }
 async function sendAudio(blob,name){
   if(busy)return;
@@ -504,11 +564,12 @@ document.addEventListener('click',async e=>{
     if(t.dataset.copy){const i=$(t.dataset.copy);i.select();try{await navigator.clipboard.writeText(i.value);t.textContent='コピーしました';setTimeout(()=>{t.textContent='コピー';},1500);}catch(_){}return;}
     if(t.id==='pwBtn'){try{await api('/api/account/password',{method:'POST',body:JSON.stringify({current:$('pw-cur').value,next:$('pw-new').value})});authMode='login';showLogin('パスワードを変えました。新しいパスワードでログインしてください。');}catch(err){setStatus(err.message,true);}return;}
     if(t.dataset.view||t.dataset.node){
-      if(recorder&&recorder.state==='recording'){setStatus('録音中です。止めてから切り替えてください。',true);return;}
+      if((recorder&&recorder.state==='recording')||live){setStatus('録音中です。止めてから切り替えてください。',true);return;}
       if(t.dataset.node){if(ui.layer!==t.dataset.node)ui.q='';ui.view='layer';ui.layer=t.dataset.node;}else ui.view=t.dataset.view;
       ui.armed=null;if(ui.view!=='rec')ui.result=null;setStatus('');render();
       if(window.innerWidth<700)$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
-    if(t.id==='recbtn'){toggleRecord();return;}
+    if(t.id==='recbtn'){if(state.canSummarizeAudio||state.canTranscribe)toggleRecord();else toggleLive();return;}
+    if(t.id==='vsave'){saveVoiceText();return;}
     if(t.id==='pick'){$('file').click();return;}
     if(t.dataset.p){const i=$('input');i.value+=(i.value&&!i.value.endsWith('\n')?'\n':'')+t.dataset.p;i.focus();return;}
     if(t.id==='save'){remember();return;}

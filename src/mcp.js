@@ -114,6 +114,8 @@ export function buildMcpServer(uid) {
     if (!memos.length) return text('未整理のメモはありません。');
     const existing = await getDedupList(uid);
     return text(`今日は ${todayJST()}。次のメモを分類し、メモごとに save_units を呼んでください。
+source が voice のメモ（録音の文字起こし）は、あわせて title（20字以内）と summary（要点3〜5個の短い文）も作って save_units に渡してください。
+文字起こしは音声認識のため誤字や句読点抜けがあるので、文脈から意味をくみ取って整理してください。
 
 ${CLASSIFY_RULES}
 
@@ -130,9 +132,11 @@ ${JSON.stringify(existing)}`);
     inputSchema: {
       memo_id: z.number().int().describe('メモのid'),
       units: z.array(unitSchema).describe('分類した記憶ユニット'),
+      title: z.string().optional().describe('録音（source=voice）のときのタイトル'),
+      summary: z.array(z.string()).optional().describe('録音（source=voice）のときの要点3〜5個'),
     },
-  }, async ({ memo_id: memoId, units }) => {
-    const r = await saveUnitsForMemo(uid, memoId, units);
+  }, async ({ memo_id: memoId, units, title, summary }) => {
+    const r = await saveUnitsForMemo(uid, memoId, units, { title, summary });
     return text(`メモ ${memoId}：${r.added}件を追加${r.repeated ? `、${r.repeated}件は既存の記憶の重みを上げました` : ''}。`);
   });
 

@@ -156,7 +156,7 @@ ${JSON.stringify(existing)}
 
 export async function getRecentRecordings(uid, limit = 10) {
   const { rows } = await pool.query(
-    `SELECT id, title, summary, text, to_char(recorded_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS recorded_at
+    `SELECT id, title, summary, text, classified, to_char(recorded_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS recorded_at
      FROM memos WHERE user_id = $2 AND source = 'voice' ORDER BY recorded_at DESC LIMIT $1`, [limit, uid]);
   return rows;
 }
@@ -175,10 +175,13 @@ export async function countUnclassified(uid) {
 }
 
 /** 分類済みのユニットを、指定のメモの記憶として保存する */
-export async function saveUnitsForMemo(uid, memoId, units) {
+export async function saveUnitsForMemo(uid, memoId, units, { title = '', summary = [] } = {}) {
   const { rows } = await pool.query('SELECT * FROM memos WHERE id = $1 AND user_id = $2', [memoId, uid]);
   if (!rows[0]) throw new Error(`メモ ${memoId} が見つかりません`);
   if (rows[0].classified) throw new Error(`メモ ${memoId} はすでに整理済みです`);
+  if (title || (summary && summary.length)) {
+    await pool.query('UPDATE memos SET title = $1, summary = $2 WHERE id = $3', [String(title || rows[0].title || ''), strArr(summary), memoId]);
+  }
   return applyUnits(rows[0], units);
 }
 
