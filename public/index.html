@@ -46,20 +46,27 @@ button{cursor:pointer}
 .board-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin:0 0 14px}
 .board-title{font-size:26px;margin:0;color:var(--marker)}
 .board-date{font-size:18px;color:var(--blue)}
-.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:22px 18px}
-@media (max-width:620px){.cards{grid-template-columns:repeat(2,1fr);gap:18px 12px}.board{padding:16px 12px 20px;border-width:9px}}
-.card{position:relative;border:1px solid transparent;border-radius:4px;padding:22px 14px 14px;text-align:left;min-height:118px;display:flex;flex-direction:column;justify-content:space-between;color:var(--ink);transition:transform .15s}
-.card:nth-child(odd){transform:rotate(-1.2deg)}.card:nth-child(even){transform:rotate(1deg)}
-.card:hover{transform:rotate(0) translateY(-2px)}
-.card[aria-pressed="true"]{transform:rotate(0);border:2px solid var(--ink)}
-.card::before{content:"";position:absolute;top:-8px;left:50%;width:16px;height:16px;margin-left:-8px;border-radius:50%;background:var(--marker)}
-.card .name{font-family:"Yomogi",cursive;font-size:23px;line-height:1.3}
-.card .sub{font-size:13px;color:var(--muted)}
-.card .count{font-family:"Yomogi",cursive;font-size:20px;color:var(--red)}
-.card[data-card="rec"]{background:var(--c-rec)}.card[data-card="write"]{background:var(--c-write)}.card[data-card="mem"]{background:var(--c-mem)}
-.card[data-card="task"]{background:var(--c-task)}.card[data-card="review"]{background:var(--c-review)}.card[data-card="core"]{background:var(--c-core)}
-.card[data-card="rec"]::before{background:var(--red)}.card[data-card="write"]::before{background:var(--blue)}
-
+.map{position:relative;aspect-ratio:16/10;min-height:360px}
+@media (max-width:620px){.map{aspect-ratio:3/4}.board{padding:14px 10px 18px;border-width:9px}}
+.map svg.links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.map svg.links path{fill:none;stroke:var(--ink);stroke-width:2.6;stroke-linecap:round}
+.node{position:absolute;left:var(--x);top:var(--y);transform:translate(-50%,-50%) rotate(var(--r,0deg));
+  background:var(--board);border:2.6px solid var(--ink);color:var(--ink);padding:10px 20px 8px;min-width:118px;text-align:center;
+  border-radius:26px 18px 30px 20px / 20px 28px 18px 26px;font-family:"Yomogi",cursive;transition:transform .15s,background .15s}
+@media (max-width:620px){.node{left:var(--mx);top:var(--my);min-width:92px;padding:8px 12px 6px}}
+.node .name{display:block;font-size:clamp(24px,4.4vw,38px);line-height:1.2}
+.node .count{display:block;font-size:15px;color:var(--red);min-height:1.3em}
+.node:hover{transform:translate(-50%,-50%) rotate(0) scale(1.04)}
+.node[aria-pressed="true"]{background:var(--c-rec)}
+.node.core{border-width:3px;padding:14px 26px 10px;background:var(--c-write)}
+.node.core .name{font-size:clamp(30px,5.6vw,48px)}
+.node.core .count{color:var(--muted);font-family:"Zen Kaku Gothic New",sans-serif;font-size:13px}
+.node.core[aria-pressed="true"]{background:var(--c-rec)}
+.magnets{display:flex;gap:10px;justify-content:flex-end;margin:10px 4px 0;flex-wrap:wrap}
+.magnet{border:1px solid var(--line);background:var(--board);border-radius:999px;padding:4px 14px;font-size:14px;display:flex;gap:6px;align-items:center}
+.magnet::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--marker)}
+.magnet[aria-pressed="true"]{border-color:var(--ink)}
+.magnet .n{color:var(--red);font-weight:700}
 .panel{margin-top:30px}
 .panel h2{font-family:"Yomogi",cursive;font-weight:400;font-size:26px;margin:0 0 4px;color:var(--marker)}
 .panel .lead{color:var(--muted);margin:0 0 16px;font-size:15px}
@@ -114,7 +121,7 @@ h4{font-size:15px;margin:20px 0 4px;color:var(--muted);font-weight:500}
 .copybox{width:100%;min-height:160px;margin-top:10px;border:1px solid var(--line);border-radius:10px;background:var(--board);padding:10px;font-size:13px}
 .notice{background:var(--board);border:1px solid var(--line);border-radius:14px;padding:16px;color:var(--muted);margin-top:20px}
 .sr{position:absolute;left:-9999px}
-@media (prefers-reduced-motion:reduce){.card{transition:none}}
+@media (prefers-reduced-motion:reduce){.node{transition:none}}
 </style>
 </head>
 <body>
@@ -140,9 +147,10 @@ h4{font-size:15px;margin:20px 0 4px;color:var(--muted);font-weight:500}
   <main id="app" hidden>
     <div class="board">
       <div class="board-head"><h2 class="board-title hand">今日の脳</h2><span class="board-date hand" id="today"></span></div>
-      <div class="cards" id="cards" role="group" aria-label="やることを選ぶ"></div>
+      <div class="map" id="map" role="group" aria-label="記憶と5つの層。記憶を押すと残せます。層を押すとその記憶を見られます"></div>
     </div>
     <div class="tray" aria-hidden="true"></div>
+    <div class="magnets" id="magnets"></div>
     <section class="panel" id="panel" aria-live="polite"></section>
     <p class="status" id="status" role="status" aria-live="polite"></p>
   </main>
@@ -155,7 +163,7 @@ const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let token='';try{token=localStorage.getItem('knowkin_token')||'';}catch(_){}
 let state={units:[],failed:[],core:null,recordings:[]};
-const ui={card:'rec',layer:null,q:'',armed:null,result:null};
+const ui={view:'rec',layer:null,q:'',armed:null,result:null};
 let busy=false;
 
 function setStatus(t,err=false){const s=$('status');s.textContent=t;s.classList.toggle('err',err);}
@@ -173,33 +181,50 @@ async function load(){
   catch(e){if(e.message!=='unauthorized'){$('app').hidden=false;$('login').hidden=true;render();setStatus('読み込みに失敗しました：'+e.message,true);}}
 }
 
-// ---- ボード ----
-function counts(){
+// ---- ボード（記憶を中心に5つの層が広がるマップ） ----
+const NODES=[
+  {id:'event',x:24,y:20,mx:27,my:12,r:-2},
+  {id:'know',x:77,y:19,mx:73,my:12,r:2},
+  {id:'rel',x:15,y:52,mx:25,my:64,r:1},
+  {id:'think',x:83,y:55,mx:75,my:64,r:-1.5},
+  {id:'act',x:29,y:84,mx:50,my:88,r:1.5},
+];
+const LAYER_INFO={event:'起きたこと、会った人、出来事の記憶',know:'学んだこと、上司からのフィードバックや教訓',think:'アイディア、判断とその理由、価値観、まだ答えの出ていない問い',act:'タスクと目標',rel:'よく関わる人の特徴や判断基準'};
+const layerOf=u=>(TYPES[u.type]||TYPES.event).layer;
+function renderMap(){
   const units=state.units||[];
-  return{mem:units.length,task:units.filter(u=>(u.type==='task'||u.type==='goal')&&!u.done).length,
-    review:units.filter(u=>!u.reviewed).length+(state.failed||[]).length};
-}
-function renderCards(){
-  const c=counts();
-  const cards=[
-    {id:'rec',name:'記憶する',sub:'録音・ボイスメモを要約して残す'},
-    {id:'write',name:'書いて残す',sub:'話すように書くだけ'},
-    {id:'mem',name:'記憶を見る',sub:'5つの層で探す',count:c.mem?c.mem+'件':''},
-    {id:'task',name:'タスク',sub:'期限の近い順',count:c.task?'のこり'+c.task:''},
-    {id:'review',name:'見直し',sub:'分類を確認する',count:c.review?c.review+'件':''},
-    {id:'core',name:'核',sub:'自分の考え方のまとめ',count:state.core?'':'まだ'},
-  ];
-  $('cards').innerHTML=cards.map(k=>`<button type="button" class="card" data-card="${k.id}" aria-pressed="${ui.card===k.id}">
-    <span class="name">${k.name}</span><span class="sub">${k.sub}</span><span class="count">${k.count||'&nbsp;'}</span></button>`).join('');
+  const cnt=id=>units.filter(u=>layerOf(u)===id).length;
+  const openTasks=units.filter(u=>(u.type==='task'||u.type==='goal')&&!u.done).length;
+  const label=l=>l.id==='act'&&openTasks?`のこり${openTasks}`:(cnt(l.id)?cnt(l.id)+'件':'');
+  $('map').innerHTML=`<svg class="links" aria-hidden="true"></svg>
+    <button type="button" class="node core" data-view="rec" aria-pressed="${ui.view==='rec'}" style="--x:50%;--y:50%;--mx:50%;--my:38%;--r:-1deg"><span class="name">記憶</span><span class="count">押して残す</span></button>
+    ${NODES.map(n=>{const l=LAYERS.find(x=>x.id===n.id);return `<button type="button" class="node" data-node="${n.id}" aria-pressed="${ui.view==='layer'&&ui.layer===n.id}" style="--x:${n.x}%;--y:${n.y}%;--mx:${n.mx}%;--my:${n.my}%;--r:${n.r}deg"><span class="name">${l.label}</span><span class="count">${label(l)||'&nbsp;'}</span></button>`;}).join('')}`;
+  drawLinks();
+  const review=units.filter(u=>!u.reviewed).length+(state.failed||[]).length;
+  $('magnets').innerHTML=`<button type="button" class="magnet" data-view="review" aria-pressed="${ui.view==='review'}">見直し${review?`<span class="n">${review}</span>`:''}</button>
+    <button type="button" class="magnet" data-view="core" aria-pressed="${ui.view==='core'}">核${state.core?'':'<span class="n">まだ</span>'}</button>`;
   const d=new Date();$('today').textContent=`${d.getMonth()+1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）`;
 }
+function drawLinks(){
+  const map=$('map');if(!map)return;const svg=map.querySelector('svg.links');const core=map.querySelector('.node.core');if(!svg||!core)return;
+  const box=map.getBoundingClientRect();const c=core.getBoundingClientRect();
+  const cx=c.left+c.width/2-box.left,cy=c.top+c.height/2-box.top;
+  svg.setAttribute('viewBox',`0 0 ${box.width} ${box.height}`);
+  svg.innerHTML=[...map.querySelectorAll('.node[data-node]')].map((el,i)=>{
+    const r=el.getBoundingClientRect();const x=r.left+r.width/2-box.left,y=r.top+r.height/2-box.top;
+    const mx=(cx+x)/2+(i%2?10:-10),my=(cy+y)/2+(i%2?-8:8);
+    return `<path d="M${cx.toFixed(1)} ${cy.toFixed(1)} Q${mx.toFixed(1)} ${my.toFixed(1)} ${x.toFixed(1)} ${y.toFixed(1)}"/>`;
+  }).join('');
+}
+window.addEventListener('resize',()=>requestAnimationFrame(drawLinks));
+if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>drawLinks());
 
 // ---- 記憶する（録音・アップロード） ----
 let recorder=null,chunks=[],recStart=0,recTimer=null;
 function renderRec(p){
   const can=state.canSummarizeAudio||state.canTranscribe;
   const recs=state.recordings||[];
-  p.innerHTML=`<h2>記憶する</h2><p class="lead">対面の会話や上司からのフィードバックを録音するか、ボイスメモをアップロードしてください。文字起こしして要約し、記憶に分けて残します。</p>
+  p.innerHTML=`<h2>記憶する</h2><p class="lead">対面の会話や上司からのフィードバックを録音するか、ボイスメモをアップロードしてください。文字起こしして要約し、5つの層に分けて残します。</p>
   <div class="sheet">
     ${can?'':`<p class="status err" style="margin:0 0 12px">録音を要約するには、サーバーに GEMINI_API_KEY の設定が必要です。</p>`}
     <div class="rec-row">
@@ -210,6 +235,17 @@ function renderRec(p){
       <input type="file" id="file" accept="audio/*,.m4a,.mp3,.wav,.aac,.ogg,.webm,.flac" hidden></div>
     <div id="result">${ui.result?resultHTML(ui.result):''}</div>
   </div>
+  <h4>書いて残す</h4>
+  <div class="sheet composer">
+    <div class="prompts">
+      <button class="chip" type="button" data-p="今日あったこと：">今日、何があったか</button>
+      <button class="chip" type="button" data-p="決めたことと理由：">何を決めて、なぜか</button>
+      <button class="chip" type="button" data-p="学んだこと・気になっていること：">何を学んだか</button>
+    </div>
+    <label for="input" class="sr">メモ</label>
+    <textarea id="input" placeholder="話すように書いてください。上司に言われたこと、思いついたこと、やることが混ざっていても大丈夫です。"></textarea>
+    <div class="actions"><button class="ghost" type="button" id="mic" hidden>話して入力</button><button class="primary" type="button" id="save">脳に残す</button></div>
+  </div>
   <h4>最近の録音</h4>
   ${recs.length?recs.map(r=>`<div class="rec-item"><h3>${esc(r.title||'録音')}</h3><div class="meta"><span>${esc(r.recorded_at)}</span></div>
     ${(r.summary||[]).length?`<ul>${r.summary.map(s=>`<li>${esc(s)}</li>`).join('')}</ul>`:''}
@@ -219,6 +255,8 @@ function renderRec(p){
   ['dragleave','drop'].forEach(ev=>drop.addEventListener(ev,e=>{e.preventDefault();drop.classList.remove('over');}));
   drop.addEventListener('drop',e=>{const f=e.dataTransfer.files[0];if(f)sendAudio(f,f.name);});
   $('file').addEventListener('change',e=>{const f=e.target.files[0];if(f)sendAudio(f,f.name);e.target.value='';});
+  $('input').addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter')remember();});
+  setupMic();
 }
 function resultHTML(r){
   return `<div class="result"><h3>${esc(r.title||'録音')}</h3>
@@ -259,21 +297,6 @@ async function sendAudio(blob,name){
 }
 
 // ---- 書いて残す ----
-function renderWrite(p){
-  p.innerHTML=`<h2>書いて残す</h2><p class="lead">上司に言われたこと、思いついたこと、やることが混ざっていても大丈夫です。</p>
-  <div class="sheet composer">
-    <div class="prompts">
-      <button class="chip" type="button" data-p="今日あったこと：">今日、何があったか</button>
-      <button class="chip" type="button" data-p="決めたことと理由：">何を決めて、なぜか</button>
-      <button class="chip" type="button" data-p="学んだこと・気になっていること：">何を学んだか</button>
-    </div>
-    <label for="input" class="sr">メモ</label>
-    <textarea id="input" placeholder="話すように書いてください。"></textarea>
-    <div class="actions"><button class="ghost" type="button" id="mic" hidden>話して入力</button><button class="primary" type="button" id="save">脳に残す</button></div>
-  </div>`;
-  $('input').addEventListener('keydown',e=>{if((e.metaKey||e.ctrlKey)&&e.key==='Enter')remember();});
-  setupMic();
-}
 async function remember(){
   if(busy)return;const text=$('input').value.trim();
   if(!text){setStatus('残す内容を入力してください。',true);$('input').focus();return;}
@@ -316,24 +339,24 @@ function unitHTML(u,{review=false}={}){
     ${u.quote?`<p class="quote">「${esc(u.quote)}」</p>`:''}${u.reason?`<p class="quote">理由：${esc(u.reason)}</p>`:''}
     <div class="meta">${meta.map(m=>`<span>${m}</span>`).join('')}</div>${actions}</div></li>`;
 }
-function renderMem(p){
-  const layerCount=id=>state.units.filter(u=>(TYPES[u.type]||TYPES.event).layer===id).length;
-  p.innerHTML=`<h2>記憶を見る</h2><p class="lead">5つの層で絞り込んだり、人・会社・テーマで探したりできます。</p>
-    <div class="prompts" role="group" aria-label="層で絞り込む"><button class="chip" data-layer="" aria-pressed="${!ui.layer}">すべて ${state.units.length}</button>${LAYERS.map(l=>`<button class="chip" data-layer="${l.id}" aria-pressed="${ui.layer===l.id}">${l.label} ${layerCount(l.id)}</button>`).join('')}</div>
-    <input class="search" id="q" type="search" placeholder="人・会社・テーマで探す" aria-label="記憶を探す"><div id="memlist"></div>`;
+function renderLayer(p){
+  const l=LAYERS.find(x=>x.id===ui.layer)||LAYERS[0];
+  p.innerHTML=`<h2>${l.label}</h2><p class="lead">${LAYER_INFO[l.id]}</p>
+    <input class="search" id="q" type="search" placeholder="人・会社・テーマで探す" aria-label="${l.label}の記憶を探す"><div id="memlist"></div>`;
   const qi=$('q');qi.value=ui.q;qi.addEventListener('input',e=>{ui.q=e.target.value;renderMemList();});
   renderMemList();
 }
 function renderMemList(){
   const box=$('memlist');if(!box)return;const q=ui.q.trim().toLowerCase();
-  let list=state.units.filter(u=>!ui.layer||(TYPES[u.type]||TYPES.event).layer===ui.layer);
+  let list=state.units.filter(u=>layerOf(u)===ui.layer);
   if(q)list=list.filter(u=>[u.content,u.quote,u.reason,...(u.people||[]),...(u.tags||[])].join(' ').toLowerCase().includes(q));
-  box.innerHTML=list.length?`<ul class="list">${list.slice(0,200).map(u=>unitHTML(u)).join('')}</ul>`:`<p class="empty">${state.units.length?'条件に合う記憶はありません。':'まだ記憶がありません。「記憶する」か「書いて残す」から始めてください。'}</p>`;
-}
-function renderTask(p){
-  const units=state.units;const open=units.filter(u=>(u.type==='task'||u.type==='goal')&&!u.done).sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));
-  const done=units.filter(u=>(u.type==='task'||u.type==='goal')&&u.done).sort((a,b)=>String(b.done_at||'').localeCompare(String(a.done_at||''))).slice(0,10);
-  p.innerHTML=`<h2>タスク</h2>`+(open.length?`<ul class="list">${open.map(u=>unitHTML(u)).join('')}</ul>`:`<p class="empty">未完了のタスクはありません。</p>`)+(done.length?`<h4>最近終わったもの</h4><ul class="list">${done.map(u=>unitHTML(u)).join('')}</ul>`:'');
+  if(ui.layer==='act'){
+    const open=list.filter(u=>!u.done).sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));
+    const done=list.filter(u=>u.done).sort((a,b)=>String(b.done_at||'').localeCompare(String(a.done_at||''))).slice(0,10);
+    box.innerHTML=(open.length?`<ul class="list">${open.map(u=>unitHTML(u)).join('')}</ul>`:`<p class="empty">未完了のタスクはありません。</p>`)+(done.length?`<h4>最近終わったもの</h4><ul class="list">${done.map(u=>unitHTML(u)).join('')}</ul>`:'');
+    return;
+  }
+  box.innerHTML=list.length?`<ul class="list">${list.slice(0,200).map(u=>unitHTML(u)).join('')}</ul>`:`<p class="empty">${q?'条件に合う記憶はありません。':'まだこの層の記憶はありません。真ん中の「記憶」から残してください。'}</p>`;
 }
 function renderReview(p){
   const unreviewed=state.units.filter(u=>!u.reviewed);const failed=state.failed||[];let html=`<h2>見直し</h2>`;
@@ -354,8 +377,8 @@ function renderCore(p){
   html+=`<div class="actions" style="justify-content:flex-start;margin-top:16px">${state.aiEnabled?'<button class="primary" id="grow">核を育てる</button>':''}<button class="ghost" id="copy">Claudeに渡す文章を作る</button><button class="ghost" id="logout">ログアウト</button></div><div id="copyarea"></div>`;
   p.innerHTML=html;
 }
-const PANELS={rec:renderRec,write:renderWrite,mem:renderMem,task:renderTask,review:renderReview,core:renderCore};
-function render(){renderCards();(PANELS[ui.card]||renderRec)($('panel'));}
+const PANELS={rec:renderRec,layer:renderLayer,review:renderReview,core:renderCore};
+function render(){renderMap();(PANELS[ui.view]||renderRec)($('panel'));}
 
 // ---- 操作 ----
 const patch=(id,body)=>api('/api/units/'+id,{method:'PATCH',body:JSON.stringify(body)});
@@ -365,8 +388,11 @@ document.addEventListener('click',async e=>{
   try{
     if(t.id==='loginBtn'){token=$('tokenInput').value.trim();try{localStorage.setItem('knowkin_token',token);}catch(_){}load();return;}
     if(t.id==='logout'){token='';try{localStorage.removeItem('knowkin_token');}catch(_){}showLogin();return;}
-    if(t.dataset.card){if(recorder&&recorder.state==='recording'){setStatus('録音中です。止めてから切り替えてください。',true);return;}ui.card=t.dataset.card;ui.armed=null;if(t.dataset.card!=='rec')ui.result=null;setStatus('');render();return;}
-    if(t.dataset.layer!==undefined){ui.layer=t.dataset.layer||null;render();return;}
+    if(t.dataset.view||t.dataset.node){
+      if(recorder&&recorder.state==='recording'){setStatus('録音中です。止めてから切り替えてください。',true);return;}
+      if(t.dataset.node){if(ui.layer!==t.dataset.node)ui.q='';ui.view='layer';ui.layer=t.dataset.node;}else ui.view=t.dataset.view;
+      ui.armed=null;if(ui.view!=='rec')ui.result=null;setStatus('');render();
+      if(window.innerWidth<700)$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.id==='recbtn'){toggleRecord();return;}
     if(t.id==='pick'){$('file').click();return;}
     if(t.dataset.p){const i=$('input');i.value+=(i.value&&!i.value.endsWith('\n')?'\n':'')+t.dataset.p;i.focus();return;}
