@@ -20,6 +20,9 @@ const unitSchema = z.object({
   same_as: z.number().int().nullable().optional().describe('既存の記憶と同じ内容ならそのid'),
   genre: z.string().max(20).optional().describe('引き出しの名前（テーマ）。既存の引き出し名があればそれを使う'),
   goal_id: z.number().int().nullable().optional().describe('この記憶が近づける目的のid（あれば）'),
+  area: z.enum(['work', 'life']).optional().describe('task・goal のとき：work=仕事 / life=プライベート'),
+  scope: z.enum(['year', 'month', 'week', 'day']).optional().describe('task・goal のとき：いつやるか（今年・今月・今週・今日）'),
+  period: z.string().optional().describe('scope の期間（2026 / 2026-09 / 2026-W40 / 2026-09-28）。省略すると今の期間'),
 });
 
 const NEW_CATEGORY_RULE = `## 新しいカテゴリ
@@ -41,6 +44,11 @@ async function categoriesPart(uid) {
 - 2〜8字程度の短い日本語にする。人物名は genre にせず people に入れる（関係の層は人物ごとに自動でまとまる）
 - 下の既存の引き出しに合うものがあれば、必ず同じ名前を使う。似た名前を増やさない
 - 既存の引き出し：${genres.length ? genres.map((g) => `${g.genre}（${g.n}）`).join('、') : '（まだありません）'}
+
+## タスクの分け方
+- task と goal には area（work=仕事 / life=プライベート）を必ず付ける
+- 「今日中に」「今週」「今月中」「今年のうちに」など時期が話されていれば scope（day / week / month / year）を付ける。期限（due）だけわかる場合は scope を省略してよい（期限の日になる）
+- 時期がまったくわからないものは scope を付けない（「いつか」に入る）
 
 ## 目的（叶えたいこと）
 - タスク・判断・教訓などが下の目的のどれかに近づくものなら、goal_id にその目的の id を入れる。関係ないものには入れない
@@ -333,14 +341,19 @@ ${JSON.stringify(rows)}`);
 
   server.registerTool('update_task', {
     title: 'タスクを更新',
-    description: 'タスクを完了・未完了にする、または期限を変える。ユーザーが「終わった」「期限が変わった」と言ったときに使う。idは get_current_tasks の結果にある。',
+    description: 'タスクを完了・未完了にする、期限・時期（今日・今週・今月・今年・いつか）・仕事/プライベートを変える。ユーザーが「終わった」「今週やる」「期限が変わった」と言ったときに使う。idは get_current_tasks の結果にある。',
     inputSchema: {
       id: z.number().int().describe('タスクのid'),
       done: z.boolean().optional(),
       due: z.string().nullable().optional().describe('新しい期限 YYYY-MM-DD（消すなら null）'),
+      area: z.enum(['work', 'life']).optional().describe('仕事 / プライベート'),
+      scope: z.enum(['year', 'month', 'week', 'day', 'none']).optional().describe('やる時期を変える（none で「いつか」に戻す）'),
+      period: z.string().optional().describe('scope の期間。省略すると今の期間'),
     },
-  }, async ({ id, done, due }) => {
-    const u = await updateUnit(uid, id, { done, due });
+  }, async ({ id, done, due, area, scope, period }) => {
+    const f = { done, due, area };
+    if (scope) { f.scope = scope === 'none' ? '' : scope; f.period = period; }
+    const u = await updateUnit(uid, id, f);
     return text(u ? `更新しました：${unitLine(u)}` : 'そのidのタスクは見つかりませんでした。');
   });
 

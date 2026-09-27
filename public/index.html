@@ -148,6 +148,26 @@ button{cursor:pointer}
 .back{background:none;border:0;color:var(--cyan);padding:4px 0;margin:4px 0 8px;font-weight:700}
 .drawer-head{display:flex;align-items:baseline;gap:10px;border-left:3px solid var(--c);padding-left:10px;margin:0 0 4px}
 .drawer-head h3{margin:0;font-size:19px}.drawer-head span{color:var(--muted);font-size:13px}
+.seg{display:flex;gap:4px;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:4px;margin:0 0 8px}
+.seg button{flex:1;border:0;background:none;border-radius:9px;padding:7px 4px;color:var(--muted);font-weight:700}
+.seg button[aria-selected="true"]{background:var(--surface2);color:var(--ink)}
+.seg.sub button{font-weight:500;font-size:14px}
+.pnav{display:flex;align-items:center;gap:10px;margin:10px 0 12px}
+.pnav span{font-weight:700;font-size:17px}
+.pnav button:not(.linkbtn){width:34px;height:34px;border-radius:50%;border:1px solid var(--line);background:var(--surface);font-size:18px;line-height:1}
+.pnav .linkbtn{margin-left:auto;font-size:13px}
+.tadd{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 6px}
+.tadd input{flex:1 1 100%!important}
+.tadd select{margin-left:auto}
+.tadd input{flex:1;min-width:0;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg2)}
+.tadd select{flex:none;width:auto;padding:8px 6px;border:1px solid var(--line);border-radius:10px;background:var(--surface);font-size:14px}
+.tadd .primary{flex:none;padding:10px 14px}
+.trow{display:flex;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.trow .body{flex:1;min-width:0}.trow.done .content{text-decoration:line-through;color:var(--muted)}
+.abadge{font-size:11px;border-radius:999px;padding:0 8px;border:1px solid}
+.abadge.work{color:#FFD66B;border-color:rgba(255,214,107,.5)}.abadge.life{color:#FFB3D9;border-color:rgba(255,179,217,.5)}
+.warn{color:#FFB86B}.muted{color:var(--muted)}
+details summary{cursor:pointer;padding:8px 0}
 .newtag{margin-left:6px;font-size:11px;font-weight:500;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 6px}
 .orb.small{width:clamp(38px,5.5vw,50px);height:clamp(38px,5.5vw,50px)}
 .pthumb{display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:10px;border:1px solid var(--line)}
@@ -807,7 +827,79 @@ function drawerPreview(d){
   const u=d.person?(d.units.find(x=>layerOf(x)==='rel')||d.units[0]):d.units[0];
   return u?u.content:'';
 }
+// ---- タスク管理（行動の層）：年・月・週・日 × 仕事・プライベート ----
+const pad2=n=>String(n).padStart(2,'0');
+const ymd=d=>`${d.getFullYear()}-${pad2(d.getMonth()+1)}-${pad2(d.getDate())}`;
+const fromYmd=s=>{const [y,m,d]=s.split('-').map(Number);return new Date(y,m-1,d);};
+function isoWeekOf(d){const t=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));const day=t.getUTCDay()||7;t.setUTCDate(t.getUTCDate()+4-day);const y0=new Date(Date.UTC(t.getUTCFullYear(),0,1));return {wy:t.getUTCFullYear(),w:Math.ceil(((t-y0)/86400000+1)/7)};}
+function periodKey(scope,d){if(scope==='year')return String(d.getFullYear());if(scope==='month')return `${d.getFullYear()}-${pad2(d.getMonth()+1)}`;if(scope==='week'){const {wy,w}=isoWeekOf(d);return `${wy}-W${pad2(w)}`;}return ymd(d);}
+function weekStart(wy,w){const jan4=new Date(wy,0,4);const day=jan4.getDay()||7;const mon=new Date(wy,0,4-day+1);mon.setDate(mon.getDate()+(w-1)*7);return mon;}
+function rangeOf(scope,key){ // [開始, 終了] の日付文字列
+  if(scope==='year')return [`${key}-01-01`,`${key}-12-31`];
+  if(scope==='month'){const [y,m]=key.split('-').map(Number);return [`${key}-01`,ymd(new Date(y,m,0))];}
+  if(scope==='week'){const [y,w]=key.split('-W').map(Number);const s=weekStart(y,w);const e=new Date(s);e.setDate(s.getDate()+6);return [ymd(s),ymd(e)];}
+  return [key,key];
+}
+function shiftDate(scope,d,n){const x=new Date(d);if(scope==='year')x.setFullYear(x.getFullYear()+n);else if(scope==='month'){x.setDate(1);x.setMonth(x.getMonth()+n);}else if(scope==='week')x.setDate(x.getDate()+7*n);else x.setDate(x.getDate()+n);return x;}
+function periodTitle(scope,d){
+  const key=periodKey(scope,d);const today=new Date();const cur=key===periodKey(scope,today);
+  const pre={day:'今日',week:'今週',month:'今月',year:'今年'}[scope];
+  if(scope==='day')return (cur?'今日 ':'')+`${d.getMonth()+1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）`;
+  if(scope==='week'){const [s,e]=rangeOf('week',key).map(fromYmd);return (cur?'今週 ':'')+`${s.getMonth()+1}/${s.getDate()}〜${e.getMonth()+1}/${e.getDate()}`;}
+  if(scope==='month')return (cur?'今月 ':'')+`${d.getFullYear()}年${d.getMonth()+1}月`;
+  return (cur?'今年 ':'')+`${d.getFullYear()}年`;
+}
+const isTask=u=>u.type==='task'||u.type==='goal';
+const areaOf=u=>u.area==='life'?'life':'work';
+function effRange(u){ // タスクのやる時期を日付の範囲にする
+  if(u.scope&&u.period)return rangeOf(u.scope,u.period);
+  if(u.due)return [u.due,u.due];
+  return null;
+}
+const SCOPE_LBL={day:'日',week:'週',month:'月',year:'年'};
+function taskRowHTML(u){
+  const g=u.goal_id&&goalsAll().find(x=>x.id===u.goal_id);
+  const when=!u.scope&&!u.due?'いつか':u.scope?({day:'日',week:'週',month:'月',year:'年'}[u.scope]):'期限';
+  return `<li class="trow${u.done?' done':''}"><input type="checkbox" class="check" data-done="${u.id}" ${u.done?'checked':''} aria-label="完了にする">
+    <div class="body"><p class="content">${esc(u.content)}</p>
+    <div class="meta"><span class="abadge ${areaOf(u)}">${areaOf(u)==='life'?'プライベート':'仕事'}</span>${u.due?`<span>期限 ${esc(u.due)}</span>`:''}${g?`<span class="goaltag" style="margin:0">★ ${esc(g.title)}</span>`:''}${(u.people||[]).length?`<span>${esc(u.people.join('、'))}</span>`:''}</div>
+    <div class="row-actions"><select data-move="${u.id}" aria-label="やる時期">
+      <option value="">時期：${when}</option><option value="day">今日にやる</option><option value="week">今週にやる</option><option value="month">今月にやる</option><option value="year">今年にやる</option><option value="none">いつか</option></select>
+      <button data-area="${u.id}">${areaOf(u)==='life'?'仕事にする':'プライベートにする'}</button></div></div></li>`;
+}
+function renderTasks(p){
+  const sc=ui.tscope||'day';const d=ui.tdate||new Date();const key=periodKey(sc,d);const [vs,ve]=rangeOf(sc,key);
+  const af=ui.tarea||'all';const isCur=key===periodKey(sc,new Date());
+  const tasks=state.units.filter(isTask).filter(u=>af==='all'||areaOf(u)===af);
+  const inView=[],carry=[],someday=[];
+  for(const u of tasks){const r=effRange(u);
+    if(!r){if(!u.done)someday.push(u);continue;}
+    if(r[0]>=vs&&r[0]<=ve)inView.push(u); // 期間をまたぐ週は、はじまりの日の月・年に入れる
+    else if(isCur&&!u.done&&r[1]<vs)carry.push(u);}
+  const byDue=(a,b)=>String(a.due||'9999').localeCompare(String(b.due||'9999'));
+  const open=inView.filter(u=>!u.done).sort(byDue),done=inView.filter(u=>u.done);
+  const n=a=>state.units.filter(isTask).filter(u=>{if(u.done||areaOf(u)!==a)return false;const r=effRange(u);return r&&r[0]>=vs&&r[0]<=ve;}).length;
+  p.innerHTML=`<h2>行動</h2><p class="lead">タスクを、年・月・週・日と、仕事・プライベートで分けて管理します。</p>
+  <div class="seg" role="tablist" aria-label="期間">${['day','week','month','year'].map(s=>`<button role="tab" data-tscope="${s}" aria-selected="${sc===s}">${SCOPE_LBL[s]}</button>`).join('')}</div>
+  <div class="seg sub" role="tablist" aria-label="分野"><button role="tab" data-tarea="all" aria-selected="${af==='all'}">すべて</button><button role="tab" data-tarea="work" aria-selected="${af==='work'}">仕事 ${n('work')}</button><button role="tab" data-tarea="life" aria-selected="${af==='life'}">プライベート ${n('life')}</button></div>
+  <div class="pnav"><button type="button" data-tshift="-1" aria-label="前へ">‹</button><span>${periodTitle(sc,d)}</span><button type="button" data-tshift="1" aria-label="次へ">›</button>${isCur?'':'<button type="button" class="linkbtn" data-tshift="0">今に戻る</button>'}</div>
+  <div class="tadd"><input id="t-new" type="text" placeholder="${{day:'今日',week:'この週',month:'この月',year:'この年'}[sc]}にやることを足す" aria-label="タスクを足す"><select id="t-area" aria-label="分野"><option value="work"${af==='life'?'':' selected'}>仕事</option><option value="life"${af==='life'?' selected':''}>プライベート</option></select><button class="primary" type="button" id="t-add">追加</button></div>
+  ${carry.length?`<h4>持ち越し <span class="warn">${carry.length}</span></h4><ul class="list">${carry.sort(byDue).map(taskRowHTML).join('')}</ul>`:''}
+  <h4>${periodTitle(sc,d)}のタスク <span class="muted">${open.length}</span></h4>
+  ${open.length?`<ul class="list">${open.map(taskRowHTML).join('')}</ul>`:`<p class="empty" style="padding:10px 0">この期間のタスクはありません。</p>`}
+  ${done.length?`<details><summary>終わったもの ${done.length}件</summary><ul class="list">${done.map(taskRowHTML).join('')}</ul></details>`:''}
+  ${someday.length?`<details${isCur&&sc==='year'?' open':''}><summary>いつか（時期が決まっていない） ${someday.length}件</summary><ul class="list">${someday.map(taskRowHTML).join('')}</ul></details>`:''}`;
+  $('t-new').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing)addTaskUI();});
+}
+async function addTaskUI(){
+  const v=$('t-new').value.trim();if(!v){setStatus('タスクの内容を入れてください。',true);return;}
+  const sc=ui.tscope||'day';const d=ui.tdate||new Date();
+  await api('/api/tasks',{method:'POST',body:JSON.stringify({content:v,area:$('t-area').value,scope:sc,period:periodKey(sc,d)})});
+  setStatus('タスクを足しました。');await load();
+}
+
 function renderLayer(p){
+  if(ui.layer==='act'&&!ui.q)return renderTasks(p);
   const l=allLayers().find(x=>x.id===ui.layer)||LAYERS[0];
   const inLayer=cats().filter(c=>T(c.key).layer===l.id);
   const info=(LAYER_INFO[l.id]||'自動で作られた層です')+(inLayer.length?`。自動で作ったカテゴリ：${inLayer.map(c=>c.label).join('、')}`:'');
@@ -927,6 +1019,11 @@ document.addEventListener('click',async e=>{
     if(t.dataset.gdrop){const k='gx'+t.dataset.gdrop;if(ui.armed!==k){ui.armed=k;render();return;}ui.armed=null;await api('/api/goals/'+t.dataset.gdrop,{method:'PATCH',body:JSON.stringify({status:'dropped'})});ui.view='goals';setStatus('目的を手放しました。');await load();return;}
     if(t.dataset.ms){const [gid,mid]=t.dataset.ms.split('|');await api(`/api/goals/${gid}/milestones/${mid}`,{method:'PATCH',body:JSON.stringify({done:t.checked})});await load();return;}
     if(t.dataset.msadd){const v=$('ms-new').value.trim();if(!v){setStatus('道のりの名前を入れてください。',true);return;}await api(`/api/goals/${t.dataset.msadd}/milestones`,{method:'POST',body:JSON.stringify({title:v})});await load();return;}
+    if(t.dataset.tscope){ui.tscope=t.dataset.tscope;render();return;}
+    if(t.dataset.tarea){ui.tarea=t.dataset.tarea;render();return;}
+    if(t.dataset.tshift!==undefined){const n=Number(t.dataset.tshift);ui.tdate=n===0?new Date():shiftDate(ui.tscope||'day',ui.tdate||new Date(),n);render();return;}
+    if(t.id==='t-add'){addTaskUI();return;}
+    if(t.dataset.area){const u=localUnit(t.dataset.area);const a=areaOf(u)==='life'?'work':'life';u.area=a;render();await patch(u.id,{area:a});return;}
     if(t.dataset.drawer!==undefined){ui.drawer=t.dataset.drawer||null;renderMemList();$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.dataset.view||t.dataset.node){
       if((recorder&&recorder.state==='recording')||live){setStatus('録音中です。止めてから切り替えてください。',true);return;}
@@ -959,7 +1056,11 @@ document.addEventListener('click',async e=>{
   }catch(err){if(err.message!=='unauthorized')setStatus('うまくいきませんでした：'+err.message,true);}
 });
 document.addEventListener('change',async e=>{
-  const s=e.target;if(!s.dataset||!s.dataset.retype)return;const u=localUnit(s.dataset.retype);u.type=s.value;render();
+  const s=e.target;
+  if(s.dataset&&s.dataset.move){const v=s.value;if(!v)return;const u=localUnit(s.dataset.move);
+    const body=v==='none'?{scope:''}:{scope:v,period:periodKey(v,new Date())};
+    try{await patch(u.id,body);setStatus(v==='none'?'「いつか」に移しました。':`${{day:'今日',week:'今週',month:'今月',year:'今年'}[v]}に移しました。`);await load();}catch(err){setStatus(err.message,true);}return;}
+  if(!s.dataset||!s.dataset.retype)return;const u=localUnit(s.dataset.retype);u.type=s.value;render();
   try{await patch(u.id,{type:s.value});}catch(err){setStatus('種類の変更に失敗しました：'+err.message,true);}
 });
 ['a-email','a-pass','a-name','a-code'].forEach(id=>$(id).addEventListener('keydown',e=>{if(e.key==='Enter')submitAuth();}));

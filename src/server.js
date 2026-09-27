@@ -8,7 +8,7 @@ import { migrate } from './db.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
-  addMemo, addPhoto, addVoice, classifyMemoById, getPhoto, mergeCategory, updateCategory, deleteUnit, getState, growCore, growCoresIfChanged, updateUnit, coreText, getCore, getOpenTasks,
+  addMemo, addPhoto, addTask, addVoice, classifyMemoById, getPhoto, mergeCategory, updateCategory, deleteUnit, getState, growCore, growCoresIfChanged, updateUnit, coreText, getCore, getOpenTasks,
 } from './brain.js';
 import {
   changePassword, clearFailures, createSession, createUser, destroySession, firstUser, getLinkToken, login, noteFailure,
@@ -165,6 +165,9 @@ api.get('/photos/:id', wrap(async (req, res) => {
   const p = await getPhoto(req.uid, Number(req.params.id));
   if (!p) return res.status(404).end();
   res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(Buffer.from(p.data));
+}));
+api.post('/tasks', wrap(async (req, res) => {
+  try { res.json(await addTask(req.uid, req.body || {})); } catch (e) { res.status(400).json({ error: e.message }); }
 }));
 api.patch('/goals/:id', wrap(async (req, res) => {
   try { await updateGoal(req.uid, Number(req.params.id), req.body || {}); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }

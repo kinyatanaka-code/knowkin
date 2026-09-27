@@ -4,6 +4,7 @@ import { askAudioJSON, canSummarizeAudio } from './audio.js';
 import { canTranscribe, transcribe } from './transcribe.js';
 import { toJpeg } from './photo.js';
 import { getGoals } from './goals.js';
+import { resolveTiming, scopeLabel, validPeriod, SCOPES } from './period.js';
 
 export const TYPES = {
   event: { label: '記憶', layer: '出来事' },
@@ -18,7 +19,7 @@ export const TYPES = {
   person: { label: '人物', layer: '関係' },
 };
 
-export const UNIT_COLS = `id, memo_id, type, genre, goal_id, content, quote, reason, people, tags, due, importance, count,
+export const UNIT_COLS = `id, memo_id, type, genre, goal_id, area, scope, period, content, quote, reason, people, tags, due, importance, count,
   done, done_at, reviewed, created_at, to_char(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS day,
   (SELECT c.label FROM categories c WHERE c.user_id = units.user_id AND c.key = units.type) AS type_label`;
 export const LAYER_IDS = ['event', 'know', 'think', 'act', 'rel'];
@@ -240,6 +241,21 @@ export async function getRecentRecordings(uid, limit = 10) {
   return rows;
 }
 
+/** 画面から直接タスクを足す */
+export async function addTask(uid, { content, area, scope, period, due, goal_id }) {
+  const text = String(content || '').trim().slice(0, 300);
+  if (!text) throw new Error('タスクの内容を入れてください');
+  const { rows } = await pool.query(`INSERT INTO memos(user_id, text, source, classified) VALUES($1, $2, 'task', TRUE) RETURNING id`, [uid, text]);
+  const [a, sc, pe] = taskFields('task', { area, scope, period, due: validDate(due) });
+  const gid = goal_id ? Number(goal_id) : null;
+  const ok = gid && (await pool.query('SELECT 1 FROM goals WHERE id = $1 AND user_id = $2', [gid, uid])).rows[0];
+  const r = await pool.query(
+    `INSERT INTO units(user_id, memo_id, type, content, due, dates, reviewed, area, scope, period, goal_id)
+     VALUES($1, $2, 'task', $3, $4, ARRAY[$5::date], TRUE, $6, $7, $8, $9) RETURNING ${UNIT_COLS}`,
+    [uid, rows[0].id, text, validDate(due), todayJST(), a, sc, pe, ok ? gid : null]);
+  return r.rows[0];
+}
+
 /** 写真のメモ。分類はClaudeが画像を見て行う */
 export async function addPhoto(uid, buffer, mimetype, caption = '') {
   const img = await toJpeg(buffer, mimetype);
@@ -306,6 +322,13 @@ export async function saveUnitsForMemo(uid, memoId, units, { title = '', summary
   return applyUnits(rows[0], units);
 }
 
+/** タスク・目標のときだけ、仕事/プライベートと時期を入れる */
+function taskFields(type, r) {
+  if (type !== 'task' && type !== 'goal') return ['', '', ''];
+  const t = resolveTiming({ scope: r.scope, period: r.period, due: validDate(r.due) });
+  return [r.area === 'life' ? 'life' : 'work', t.scope, t.period];
+}
+
 async function applyUnits(memo, list) {
   const today = todayJST();
   const keys = await typeKeys(memo.user_id);
@@ -333,10 +356,11 @@ async function applyUnits(memo, list) {
         if (hit.rowCount) { repeated++; continue; }
       }
       await client.query(
-        `INSERT INTO units(user_id, memo_id, type, content, quote, reason, people, tags, due, importance, dates, genre, goal_id)
-         VALUES($11, $1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::date], $12, $13)`,
+        `INSERT INTO units(user_id, memo_id, type, content, quote, reason, people, tags, due, importance, dates, genre, goal_id, area, scope, period)
+         VALUES($11, $1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::date], $12, $13, $14, $15, $16)`,
         [memo.id, type, String(r.content), String(r.quote || ''), String(r.reason || ''),
-          strArr(r.people), strArr(r.tags), validDate(r.due), imp(r.importance), today, memo.user_id, String(r.genre || '').trim().slice(0, 20), goalIds.has(Number(r.goal_id)) ? Number(r.goal_id) : null],
+          strArr(r.people), strArr(r.tags), validDate(r.due), imp(r.importance), today, memo.user_id, String(r.genre || '').trim().slice(0, 20), goalIds.has(Number(r.goal_id)) ? Number(r.goal_id) : null,
+          ...taskFields(type, r)],
       );
       added++;
       if (goalIds.has(Number(r.goal_id))) touched.add(Number(r.goal_id));
@@ -466,6 +490,13 @@ export async function updateUnit(uid, id, fields) {
     if (gid !== null && !(await pool.query('SELECT 1 FROM goals WHERE id = $1 AND user_id = $2', [gid, uid])).rows[0]) throw new Error('目的が見つかりません');
     params.push(gid); sets.push(`goal_id = $${params.length}`);
   }
+  if (fields.area === 'work' || fields.area === 'life') { params.push(fields.area); sets.push(`area = $${params.length}`); }
+  if (fields.scope !== undefined) {
+    const sc = SCOPES.includes(fields.scope) ? fields.scope : '';
+    const pe = sc && validPeriod(sc, String(fields.period || '')) ? String(fields.period) : sc ? resolveTiming({ scope: sc }).period : '';
+    params.push(sc); sets.push(`scope = $${params.length}`);
+    params.push(pe); sets.push(`period = $${params.length}`);
+  }
   if (typeof fields.genre === 'string') { params.push(fields.genre.trim().slice(0, 20)); sets.push(`genre = $${params.length}`); }
   if (typeof fields.content === 'string' && fields.content.trim()) { params.push(fields.content.trim()); sets.push(`content = $${params.length}`); }
   if (fields.due !== undefined) { params.push(validDate(fields.due)); sets.push(`due = $${params.length}`); }
@@ -498,6 +529,7 @@ export function unitLine(u) {
   if (u.quote) bits.push(`「${u.quote}」`);
   if (u.reason) bits.push(`理由：${u.reason}`);
   const meta = [];
+  if (u.type === 'task' || u.type === 'goal') meta.push(`${u.area === 'life' ? 'プライベート' : '仕事'}・${scopeLabel(u.scope, u.period)}`);
   if (u.due) meta.push(`期限 ${u.due}`);
   if (u.people?.length) meta.push(`人物 ${u.people.join('、')}`);
   if (u.tags?.length) meta.push(`タグ ${u.tags.join('、')}`);

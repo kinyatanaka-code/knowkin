@@ -162,3 +162,8 @@ CREATE TABLE IF NOT EXISTS goal_snapshots (
   progress  INTEGER NOT NULL,
   PRIMARY KEY (goal_id, day)
 );
+
+-- タスクの分け方：仕事・プライベート と 年・月・週・日
+ALTER TABLE units ADD COLUMN IF NOT EXISTS area TEXT NOT NULL DEFAULT '';     -- work / life
+ALTER TABLE units ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT '';    -- year / month / week / day
+ALTER TABLE units ADD COLUMN IF NOT EXISTS period TEXT NOT NULL DEFAULT '';   -- 2026 / 2026-09 / 2026-W40 / 2026-09-28
