@@ -128,3 +128,37 @@ CREATE TABLE IF NOT EXISTS google_links (
 
 -- 層の中の「引き出し」（テーマ）
 ALTER TABLE units ADD COLUMN IF NOT EXISTS genre TEXT NOT NULL DEFAULT '';
+
+-- 目的（叶えたいこと）と、そこまでの道のり
+CREATE TABLE IF NOT EXISTS goals (
+  id              SERIAL PRIMARY KEY,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  title           TEXT NOT NULL,
+  area            TEXT NOT NULL DEFAULT 'work',        -- work / life
+  future          TEXT NOT NULL DEFAULT '',            -- 叶えたい未来の姿
+  why             TEXT NOT NULL DEFAULT '',            -- なぜそうしたいか
+  criteria        TEXT NOT NULL DEFAULT '',            -- 達成の基準
+  due             DATE,
+  status          TEXT NOT NULL DEFAULT 'candidate',   -- candidate / active / paused / done / dropped
+  pinned          BOOLEAN NOT NULL DEFAULT FALSE,
+  note            TEXT NOT NULL DEFAULT '',            -- Claudeの見立て（現在地の一言）
+  note_at         TIMESTAMPTZ,
+  source_memo_id  INTEGER,
+  last_activity_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS milestones (
+  id        SERIAL PRIMARY KEY,
+  goal_id   INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+  title     TEXT NOT NULL,
+  position  INTEGER NOT NULL DEFAULT 0,
+  done      BOOLEAN NOT NULL DEFAULT FALSE,
+  done_at   TIMESTAMPTZ
+);
+ALTER TABLE units ADD COLUMN IF NOT EXISTS goal_id INTEGER REFERENCES goals(id) ON DELETE SET NULL;
+CREATE TABLE IF NOT EXISTS goal_snapshots (
+  goal_id   INTEGER NOT NULL REFERENCES goals(id) ON DELETE CASCADE,
+  day       DATE NOT NULL,
+  progress  INTEGER NOT NULL,
+  PRIMARY KEY (goal_id, day)
+);

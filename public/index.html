@@ -41,7 +41,7 @@ button{cursor:pointer}
 .space-title{margin:0;font-size:15px;font-weight:500;color:var(--muted);letter-spacing:.08em}
 .space-date{font-size:14px;color:var(--muted)}
 .map{position:relative;aspect-ratio:16/10;min-height:380px}
-@media (max-width:620px){.map{aspect-ratio:3/4.2}}
+@media (max-width:620px){.map{aspect-ratio:3/5.1}}
 .map canvas{position:absolute;inset:0;width:100%;height:100%}
 .map svg.links{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:1}
 .map svg.links path{fill:none;stroke:url(#linkGrad);stroke-width:2;stroke-linecap:round;filter:drop-shadow(0 0 4px rgba(155,124,255,.9))}
@@ -69,6 +69,35 @@ button{cursor:pointer}
 .node.core .count{color:var(--cyan)}
 .node.core[aria-pressed="true"] .brain{color:#fff}
 
+.goal{position:absolute;left:var(--x);top:var(--y);transform:translate(-50%,-50%);z-index:2;background:none;border:0;padding:0;color:var(--ink);display:flex;flex-direction:column;align-items:center;gap:3px;max-width:34%;transition:transform .2s}
+.goal:hover{transform:translate(-50%,-50%) scale(1.07)}
+@media (max-width:620px){.goal{left:var(--mx);top:var(--my)}}
+.sw{filter:drop-shadow(0 0 5px var(--sc)) drop-shadow(0 0 14px var(--sc));opacity:var(--o);line-height:0}
+.star{display:block;width:var(--s);height:var(--s);background:radial-gradient(circle,#fff 0 18%,var(--sc) 45%);clip-path:polygon(50% 0,60% 40%,100% 50%,60% 60%,50% 100%,40% 60%,0 50%,40% 40%)}
+.goal .gname{font-size:12px;font-weight:700;text-align:center;line-height:1.35;text-shadow:0 0 8px rgba(0,0,0,.8)}
+.goal .gpct{font-size:11px;color:var(--sc)}
+.goal .gpct.stall{color:#FFB86B}
+.goal-hint{position:absolute;left:50%;top:13%;transform:translate(-50%,-50%);z-index:2;font-size:12px;color:var(--muted);background:none;border:1px dashed var(--line);border-radius:999px;padding:4px 12px}
+.gpath{position:relative;height:18px;margin:10px 4px 0}
+.gpath .base{position:absolute;top:8px;left:0;right:8%;height:2px;background:var(--line)}
+.gpath::before{content:'';position:absolute;top:4px;left:0;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:var(--gc)}
+.gpath .fill{position:absolute;top:8px;left:0;height:2px;background:var(--gc)}
+.gpath .ms{position:absolute;top:4px;width:10px;height:10px;margin-left:-5px;border-radius:50%;border:1.5px solid var(--line);background:var(--surface)}
+.gpath .ms.done{background:var(--gc);border-color:var(--gc)}
+.gpath .here{position:absolute;top:2px;width:14px;height:14px;margin-left:-7px;border-radius:50%;background:#fff;box-shadow:0 0 8px var(--gc)}
+.gpath .flag{position:absolute;right:0;top:-3px;color:var(--gc);font-size:16px}
+.gcard{display:block;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 12px;color:var(--ink)}
+.gcard:hover{border-color:var(--gc)}
+.gtop{display:flex;justify-content:space-between;gap:8px;align-items:center;font-size:12px;color:var(--muted)}
+.gbadge{font-size:12px;padding:1px 9px;border-radius:999px;border:1px solid var(--gc);color:var(--gc)}
+.gtitle{font-size:16px;font-weight:700;margin:6px 0 2px}
+.gfuture{font-size:13px;color:var(--muted);margin:0}
+.gnow{font-size:13px;margin:8px 0 0}.gnow b{color:var(--gc)}
+.future-box{border-left:3px solid var(--gc);padding:2px 0 2px 12px;margin:10px 0 14px}
+.future-box p{margin:0}.future-box .lbl{font-size:12px;color:var(--muted);margin-top:8px}
+.msl{list-style:none;margin:0;padding:0}.msl li{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.msl li.done span{text-decoration:line-through;color:var(--muted)}.msl .nowtag{margin-left:auto;font-size:12px;color:var(--gc)}
+.goaltag{margin-left:6px;font-size:11px;font-weight:500;color:#FFD66B;border:1px solid rgba(255,214,107,.5);border-radius:999px;padding:0 6px}
 .magnets{display:flex;gap:10px;justify-content:flex-end;margin:12px 2px 0;flex-wrap:wrap}
 .magnet{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 16px;font-size:14px;display:flex;gap:8px;align-items:center}
 .magnet::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
@@ -285,18 +314,86 @@ async function load(){
   catch(e){if(e.message!=='unauthorized'){$('app').hidden=false;$('login').hidden=true;render();setStatus('読み込みに失敗しました：'+e.message,true);}}
 }
 
+// ---- 目的 ----
+const goalsAll=()=>(state&&state.goals)||[];
+const goalCands=()=>goalsAll().filter(g=>g.status==='candidate');
+function mapGoals(){return goalsAll().filter(g=>g.status==='active').slice().sort((a,b)=>(b.pinned-a.pinned)||String(a.due||'9999').localeCompare(String(b.due||'9999'))||(b.progress-a.progress)).slice(0,3);}
+const gcol=g=>GCOL[g.area]||GCOL.work;
+const areaLabel=a=>a==='life'?'プライベート':'仕事';
+function gpathHTML(g){
+  const n=g.milestones.length;
+  const ms=n?g.milestones.slice(0,-1).map((m,i)=>`<span class="ms${m.done?' done':''}" style="left:${(((i+1)/n)*92).toFixed(1)}%"></span>`).join(''):'';
+  const p=Math.min(92,g.progress*0.92);
+  return `<div class="gpath" style="--gc:${gcol(g)}"><span class="base"></span><span class="fill" style="width:${p.toFixed(1)}%"></span>${ms}<span class="here" style="left:${p.toFixed(1)}%"></span><span class="flag" aria-hidden="true">⚑</span></div>`;
+}
+function goalCardHTML(g){
+  const d=g.milestones.filter(m=>m.done).length;
+  const right=g.stalled?`<span style="color:#FFB86B">${g.idle_days}日動きなし</span>`:g.status==='paused'?'保留中':g.due?`${esc(g.due)}まで`:'期限なし';
+  return `<button type="button" class="gcard" data-goal="${g.id}" style="--gc:${gcol(g)}">
+    <span class="gtop"><span class="gbadge">${areaLabel(g.area)}</span><span>${g.pinned?'📌 ':''}${right}</span></span>
+    <p class="gtitle">${esc(g.title)}</p>${g.future?`<p class="gfuture">${esc(g.future)}</p>`:''}
+    ${gpathHTML(g)}
+    <p class="gnow"><b>今ここ</b>　${g.milestones.length?`道のり ${d}/${g.milestones.length}・`:''}タスク ${g.tasks_done}/${g.tasks_total}　<span style="color:var(--muted)">${esc(g.note||'')}</span></p></button>`;
+}
+function candHTML(g){
+  return `<li class="item"><div class="body"><div class="type" style="color:${gcol(g)}">目的の候補・${areaLabel(g.area)}</div><p class="content"><strong>${esc(g.title)}</strong></p>
+    ${g.future?`<p class="quote">${esc(g.future)}</p>`:''}${g.milestones.length?`<p class="quote">道のり：${g.milestones.map(m=>esc(m.title)).join(' → ')}</p>`:''}
+    <div class="row-actions"><button data-gapprove="${g.id}">目的にする</button><button class="del${ui.armed==='gr'+g.id?' armed':''}" data-greject="${g.id}">${ui.armed==='gr'+g.id?'もう一度押すと見送ります':'見送る'}</button></div></div></li>`;
+}
+function renderGoals(p){
+  const c=goalCands();const act=goalsAll().filter(g=>g.status==='active');const paused=goalsAll().filter(g=>g.status==='paused');
+  let html=`<h2>目的</h2><p class="lead">仕事でもプライベートでも、成し遂げたいこと・叶えたい未来です。話したことや記録からClaudeが候補を出し、あなたが承認すると目的になります。</p>`;
+  if(c.length)html+=`<h4>承認待ちの候補</h4><ul class="list">${c.map(candHTML).join('')}</ul>`;
+  html+=act.length?`<h4>進行中</h4>${act.map(goalCardHTML).join('')}`:`<p class="empty">進行中の目的はまだありません。やりたいことや叶えたいことを記録に残すと、Claudeが整理のときに候補を出します。</p>`;
+  if(paused.length)html+=`<h4>保留中</h4>${paused.map(goalCardHTML).join('')}`;
+  p.innerHTML=html;
+}
+function renderGoal(p){
+  const g=goalsAll().find(x=>x.id===ui.goal);if(!g){ui.view='goals';return renderGoals(p);}
+  const linked=state.units.filter(u=>u.goal_id===g.id);const tasks=linked.filter(u=>u.type==='task'||u.type==='goal');const others=linked.filter(u=>!(u.type==='task'||u.type==='goal'));
+  const arm=k=>ui.armed===k;
+  p.innerHTML=`<button class="back" type="button" data-view="goals">← 目的一覧</button>
+  <div style="--gc:${gcol(g)}">
+    <span class="gbadge">${areaLabel(g.area)}</span>${g.status==='paused'?'<span class="newtag">保留中</span>':''}
+    <h2 style="margin-top:8px">${esc(g.title)}</h2>
+    <div class="future-box">
+      ${g.future?`<p class="lbl" style="margin-top:0">叶えたい未来</p><p style="font-size:17px">${esc(g.future)}</p>`:''}
+      ${g.why?`<p class="lbl">なぜ</p><p>${esc(g.why)}</p>`:''}
+      ${g.criteria?`<p class="lbl">達成の基準</p><p>${esc(g.criteria)}</p>`:''}
+      ${g.due?`<p class="lbl">期限</p><p>${esc(g.due)}</p>`:''}
+    </div>
+    ${gpathHTML(g)}
+    <div class="sheet" style="margin-top:14px"><p class="hint" style="margin:0 0 6px">現在地${g.note_at?`（Claudeの見立て・${esc(new Date(g.note_at).toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo'}))}）`:''}</p>
+      <p style="margin:0">${g.note?esc(g.note):`進み具合 ${g.progress}%。Claudeが整理するときに、つながった記憶から現在地を書きます。`}</p>${g.stalled?`<p class="status err" style="margin:6px 0 0">${g.idle_days}日動きがありません</p>`:''}</div>
+    <h4>道のり</h4>
+    ${g.milestones.length?`<ul class="msl">${g.milestones.map(m=>`<li class="${m.done?'done':''}"><input type="checkbox" class="check" data-ms="${g.id}|${m.id}" ${m.done?'checked':''} aria-label="済みにする"><span>${esc(m.title)}</span>${m.now?'<span class="nowtag">今ここ</span>':''}</li>`).join('')}</ul>`:'<p class="empty" style="padding:8px 0">道のりはまだありません。</p>'}
+    <div class="copyrow" style="margin-top:10px"><input id="ms-new" type="text" placeholder="道のりを足す（例：月150件を達成する）" aria-label="道のりを足す"><button class="ghost" data-msadd="${g.id}">追加</button></div>
+    <h4>つながっているタスク</h4>
+    ${tasks.length?`<ul class="list">${tasks.map(u=>unitHTML(u)).join('')}</ul>`:'<p class="empty" style="padding:8px 0">まだありません。整理のときにClaudeがつなげます。</p>'}
+    ${others.length?`<h4>つながっている記憶</h4><ul class="list">${others.map(u=>unitHTML(u)).join('')}</ul>`:''}
+    <div class="actions" style="justify-content:flex-start;margin-top:18px">
+      <button class="ghost" data-gpin="${g.id}">${g.pinned?'ピン留めを外す':'ネットワークにピン留め'}</button>
+      <button class="ghost" data-gstatus="${g.id}|${g.status==='paused'?'active':'paused'}">${g.status==='paused'?'再開する':'保留にする'}</button>
+      <button class="ghost${arm('gd'+g.id)?' on':''}" data-gdone="${g.id}">${arm('gd'+g.id)?'もう一度押すと達成にします':'達成した'}</button>
+      <button class="ghost${arm('gx'+g.id)?' on':''}" data-gdrop="${g.id}">${arm('gx'+g.id)?'もう一度押すと手放します':'手放す'}</button>
+    </div>
+  </div>`;
+}
+
 // ---- ネットワーク空間（脳を中心に5つの層、記憶は星として層のまわりに浮かぶ） ----
 const NODES=[
-  {id:'event',x:22,y:24,mx:24,my:19},
-  {id:'know',x:78,y:22,mx:76,my:19},
-  {id:'rel',x:14,y:60,mx:17,my:66},
-  {id:'think',x:86,y:60,mx:80,my:66},
-  {id:'act',x:32,y:86,mx:36,my:91},
+  {id:'event',x:20,y:34,mx:22,my:36},
+  {id:'know',x:80,y:34,mx:78,my:36},
+  {id:'rel',x:13,y:68,mx:17,my:73},
+  {id:'think',x:87,y:68,mx:83,my:73},
+  {id:'act',x:32,y:90,mx:36,my:92},
 ];
 const LCOL={event:'#5CD2FF',know:'#6F9BFF',think:'#B07CFF',act:'#FF6FC8',rel:'#4FE3C1'};
 const LAYER_INFO={event:'起きたこと、会った人、出来事の記憶',know:'学んだこと、上司からのフィードバックや教訓',think:'アイディア、判断とその理由、価値観、まだ答えの出ていない問い',act:'タスクと目標',rel:'よく関わる人の特徴や判断基準'};
 const layerOf=u=>T(u.type).layer;
-const EXTRA_SLOTS=[{x:66,y:88,mx:68,my:91},{x:50,y:16,mx:50,my:9},{x:88,y:86,mx:84,my:84},{x:12,y:86,mx:14,my:84}];
+const EXTRA_SLOTS=[{x:66,y:90,mx:66,my:92},{x:88,y:90,mx:86,my:88},{x:12,y:90,mx:12,my:88},{x:50,y:92,mx:50,my:97}];
+const GOAL_SLOTS=[{x:30,y:13,mx:22,my:16},{x:50,y:8,mx:50,my:12},{x:70,y:13,mx:78,my:16}];
+const GCOL={work:'#FFD66B',life:'#FFB3D9'};
 const BRAIN=`<svg class="brain" viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
   <path d="M30 11c-4-4-12-3-13 3-6 0-9 6-7 10-4 3-4 10 0 13-2 5 2 11 8 11 2 5 9 7 12 3z"/>
   <path d="M34 11c4-4 12-3 13 3 6 0 9 6 7 10 4 3 4 10 0 13 2 5-2 11-8 11-2 5-9 7-12 3z"/>
@@ -317,11 +414,16 @@ function renderMap(){
   const label=id=>id==='act'&&openTasks?`のこり${openTasks}`:(cnt(id)?cnt(id)+'件':'');
   $('map').innerHTML=`<canvas aria-hidden="true"></canvas>
     <svg class="links" aria-hidden="true"><defs><linearGradient id="linkGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#5CD2FF"/><stop offset="100%" stop-color="#FF6FC8"/></linearGradient></defs><g id="linkPaths"></g></svg>
-    <button type="button" class="node core" data-view="rec" aria-pressed="${ui.view==='rec'}" style="--x:50%;--y:50%;--mx:50%;--my:43%">${BRAIN}<span class="name">記憶</span><span class="count">押して残す</span></button>
+    <button type="button" class="node core" data-view="rec" aria-pressed="${ui.view==='rec'}" style="--x:50%;--y:58%;--mx:50%;--my:55%">${BRAIN}<span class="name">記憶</span><span class="count">押して残す</span></button>
     ${mapNodes().map(n=>`<button type="button" class="node" data-node="${esc(n.id)}" aria-pressed="${ui.view==='layer'&&ui.layer===n.id}" style="--x:${n.x}%;--y:${n.y}%;--mx:${n.mx}%;--my:${n.my}%;--c:${lcol(n.id)}"><span class="orb${n.custom?' small':''}"></span><span class="name">${esc(n.label)}</span><span class="count">${label(n.id)||'&nbsp;'}</span></button>`).join('')}`;
+  const act=mapGoals();
+  if(act.length)$('map').insertAdjacentHTML('beforeend',act.map((g,i)=>{const sl=GOAL_SLOTS[i];const c=GCOL[g.area]||GCOL.work;
+    return `<button type="button" class="goal" data-goal="${g.id}" style="--x:${sl.x}%;--y:${sl.y}%;--mx:${sl.mx}%;--my:${sl.my}%;--sc:${c};--s:${18+g.progress*0.28}px;--o:${(0.55+g.progress/200).toFixed(2)}"><span class="sw"><span class="star"></span></span><span class="gname">${esc(g.title)}</span><span class="gpct${g.stalled?' stall':''}">${g.stalled?g.idle_days+'日動きなし':g.progress+'%'}</span></button>`;}).join(''));
+  else $('map').insertAdjacentHTML('beforeend',`<button type="button" class="goal-hint" data-view="goals">${goalCands().length?`目的の候補が${goalCands().length}件あります`:'目的はここに星として光ります'}</button>`);
   layoutNet();
-  const review=units.filter(u=>!u.reviewed).length+(state.failed||[]).length+cats().filter(c=>!c.reviewed).length;
+  const review=units.filter(u=>!u.reviewed).length+(state.failed||[]).length+cats().filter(c=>!c.reviewed).length+goalCands().length;
   $('magnets').innerHTML=`<button type="button" class="magnet" data-view="review" aria-pressed="${ui.view==='review'}">見直し${review?`<span class="n">${review}</span>`:''}</button>
+    <button type="button" class="magnet" data-view="goals" aria-pressed="${ui.view==='goals'||ui.view==='goal'}">目的${goalCands().length?`<span class="n">${goalCands().length}</span>`:''}</button>
     <button type="button" class="magnet" data-view="core" aria-pressed="${ui.view==='core'}">核${state.core?'':'<span class="n">まだ</span>'}</button>
     <button type="button" class="magnet" data-view="account" aria-pressed="${ui.view==='account'}">${esc((state.user&&state.user.name)||'アカウント')}</button>`;
   const d=new Date();$('today').textContent=`${d.getMonth()+1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）`;
@@ -344,6 +446,11 @@ function layoutNet(){
   $('linkPaths').innerHTML=Object.entries(net.centers).map(([id,p],i)=>{const mx=(c.x+p.x)/2+(i%2?18:-18),my=(c.y+p.y)/2+(i%2?-12:12);
     const d=`M${c.x.toFixed(1)} ${c.y.toFixed(1)} Q${mx.toFixed(1)} ${my.toFixed(1)} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;return `<path d="${d}"/><path class="flow" d="${d}"/>`;}).join('');
   map.querySelector('svg.links').setAttribute('viewBox',`0 0 ${net.w} ${net.h}`);
+  const gs=mapGoals();
+  $('linkPaths').insertAdjacentHTML('beforeend',[...map.querySelectorAll('.goal')].map((el,i)=>{const g=gs[i];if(!g)return '';const col=GCOL[g.area]||GCOL.work;
+    const r=el.querySelector('.star').getBoundingClientRect();const x=r.left+r.width/2-box.left,y=r.top+r.height/2-box.top;
+    const f=Math.max(0.04,g.progress/100);const px=c.x+(x-c.x)*f,py=c.y+(y-c.y)*f;
+    return `<path d="M${c.x.toFixed(1)} ${c.y.toFixed(1)} L${x.toFixed(1)} ${y.toFixed(1)}" style="stroke:${col};stroke-width:1.2;stroke-dasharray:2 7;opacity:.55;filter:none"/><circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="4.5" fill="#fff" style="filter:drop-shadow(0 0 5px ${col}) drop-shadow(0 0 10px ${col})"/>`;}).join(''));
   // 背景の粒子
   const n=Math.min(110,Math.round(net.w*net.h/7000));
   if(net.parts.length!==n)net.parts=Array.from({length:n},()=>({x:Math.random()*net.w,y:Math.random()*net.h,vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25,r:Math.random()*1.4+.4}));
@@ -660,7 +767,7 @@ function unitHTML(u,{review=false,showLayer=false}={}){
   if(review){const opts=typeOptions(u.type);const armed=ui.armed===u.id;
     actions=`<div class="row-actions"><select data-retype="${u.id}" aria-label="種類を変える">${opts}</select><button data-ok="${u.id}">確認済みにする</button><button class="del${armed?' armed':''}" data-del="${u.id}">${armed?'もう一度押すと削除':'削除'}</button></div>`;}
   return `<li class="item${u.done?' done':''}">${isTask&&!review?`<input type="checkbox" class="check" data-done="${u.id}" ${u.done?'checked':''} aria-label="完了にする">`:''}
-    <div class="body"><div class="type" style="color:${lcol(t.layer)}">${esc(t.label)}${t.custom?'<span class="newtag">自動</span>':''}${u.genre&&!showLayer?`<span class="newtag">${esc(u.genre)}</span>`:''}</div><p class="content">${esc(u.content)}</p>
+    <div class="body"><div class="type" style="color:${lcol(t.layer)}">${esc(t.label)}${t.custom?'<span class="newtag">自動</span>':''}${u.genre&&!showLayer?`<span class="newtag">${esc(u.genre)}</span>`:''}${u.goal_id&&ui.view!=='goal'?(()=>{const g=goalsAll().find(x=>x.id===u.goal_id);return g?`<span class="goaltag">★ ${esc(g.title)}</span>`:'';})():''}</div><p class="content">${esc(u.content)}</p>
     ${u.quote?`<p class="quote">「${esc(u.quote)}」</p>`:''}${u.reason?`<p class="quote">理由：${esc(u.reason)}</p>`:''}
     <div class="meta">${meta.map(m=>`<span>${m}</span>`).join('')}</div>${actions}</div></li>`;
 }
@@ -733,6 +840,7 @@ function renderMemList(){
 function renderReview(p){
   const unreviewed=state.units.filter(u=>!u.reviewed);const failed=state.failed||[];let html=`<h2>見直し</h2>`;
   const newCats=cats().filter(c=>!c.reviewed);
+  if(goalCands().length)html+=`<h4>目的の候補</h4><p class="lead">話したことや記録から、Claudeが見つけた「叶えたいこと」です。</p><ul class="list">${goalCands().map(candHTML).join('')}</ul>`;
   if(newCats.length)html+=`<h4>新しくできたカテゴリ</h4><p class="lead">どの種類にも当てはまらない記憶のために、Claudeが作りました。このまま使うか、既存の種類にまとめてください。</p>
     <ul class="list">${newCats.map(c=>`<li class="item"><div class="body"><div class="type" style="color:${lcol(T(c.key).layer)}">${esc(c.label)}<span class="newtag">自動</span></div>
       <p class="content">${esc(c.description||'')}</p><div class="meta"><span>層：${esc(c.layer==='new'?c.layer_label+'（新しい層）':(LAYERS.find(l=>l.id===c.layer)||{}).label||c.layer)}</span><span>${c.unit_count}件</span></div>
@@ -741,7 +849,7 @@ function renderReview(p){
     ?`<h4>分類できなかったメモ</h4><ul class="list">${failed.map(m=>`<li class="item"><div class="body"><p class="content">${esc(m.text)}</p><div class="row-actions"><button data-reclass="${m.id}">分類し直す</button></div></div></li>`).join('')}</ul>`
     :`<h4>未整理のメモ（${failed.length}件）</h4><p class="lead">Claudeとの会話で「knowkinの未整理メモを整理して」と頼むと、分類されて記憶に入ります。</p><ul class="list">${failed.map(m=>`<li class="item"><div class="body"><p class="content">${esc(m.text)}</p></div></li>`).join('')}</ul>`;
   if(unreviewed.length)html+=`<div class="actions" style="justify-content:space-between;margin-top:8px"><span class="lead" style="margin:0">分類を確認して、違うものは直してください。</span><button class="ghost" id="okall">全部確認済みにする</button></div><ul class="list">${unreviewed.map(u=>unitHTML(u,{review:true})).join('')}</ul>`;
-  if(!failed.length&&!unreviewed.length&&!newCats.length)html+=`<p class="empty">見直すものはありません。週に1回ここを開いて、分類を確認するのがおすすめです。</p>`;
+  if(!failed.length&&!unreviewed.length&&!newCats.length&&!goalCands().length)html+=`<p class="empty">見直すものはありません。週に1回ここを開いて、分類を確認するのがおすすめです。</p>`;
   p.innerHTML=html;
 }
 function renderCore(p){
@@ -792,7 +900,7 @@ async function renderAccount(p){
   </div>
   <div class="actions" style="justify-content:flex-start;margin-top:18px"><button class="ghost" id="logout">ログアウト</button></div>`;
 }
-const PANELS={rec:renderRec,layer:renderLayer,review:renderReview,core:renderCore,account:renderAccount};
+const PANELS={rec:renderRec,layer:renderLayer,review:renderReview,core:renderCore,account:renderAccount,goals:renderGoals,goal:renderGoal};
 function render(){renderMap();(PANELS[ui.view]||renderRec)($('panel'));}
 
 // ---- 操作 ----
@@ -810,6 +918,15 @@ document.addEventListener('click',async e=>{
       ui.armed=null;await api('/api/account/disconnect',{method:'POST'});setStatus('Claude.aiとの接続を切りました。');render();return;}
     if(t.dataset.copy){const i=$(t.dataset.copy);i.select();try{await navigator.clipboard.writeText(i.value);t.textContent='コピーしました';setTimeout(()=>{t.textContent='コピー';},1500);}catch(_){}return;}
     if(t.id==='pwBtn'){try{await api('/api/account/password',{method:'POST',body:JSON.stringify({current:$('pw-cur').value,next:$('pw-new').value})});authMode='login';showLogin('パスワードを変えました。新しいパスワードでログインしてください。');}catch(err){setStatus(err.message,true);}return;}
+    if(t.dataset.goal){if((recorder&&recorder.state==='recording')||live||prog){setStatus('録音・アップロードの処理中です。',true);return;}ui.view='goal';ui.goal=Number(t.dataset.goal);ui.armed=null;setStatus('');render();$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
+    if(t.dataset.gapprove){await api('/api/goals/'+t.dataset.gapprove,{method:'PATCH',body:JSON.stringify({status:'active'})});setStatus('目的にしました。ネットワークに星として現れます。');await load();return;}
+    if(t.dataset.greject){const k='gr'+t.dataset.greject;if(ui.armed!==k){ui.armed=k;render();return;}ui.armed=null;await api('/api/goals/'+t.dataset.greject,{method:'PATCH',body:JSON.stringify({status:'dropped'})});setStatus('候補を見送りました。');await load();return;}
+    if(t.dataset.gpin){const g=goalsAll().find(x=>x.id===Number(t.dataset.gpin));await api('/api/goals/'+g.id,{method:'PATCH',body:JSON.stringify({pinned:!g.pinned})});await load();return;}
+    if(t.dataset.gstatus){const [id,st]=t.dataset.gstatus.split('|');await api('/api/goals/'+id,{method:'PATCH',body:JSON.stringify({status:st})});await load();return;}
+    if(t.dataset.gdone){const k='gd'+t.dataset.gdone;if(ui.armed!==k){ui.armed=k;render();return;}ui.armed=null;await api('/api/goals/'+t.dataset.gdone,{method:'PATCH',body:JSON.stringify({status:'done'})});ui.view='goals';setStatus('おめでとうございます。目的を達成にしました。');await load();return;}
+    if(t.dataset.gdrop){const k='gx'+t.dataset.gdrop;if(ui.armed!==k){ui.armed=k;render();return;}ui.armed=null;await api('/api/goals/'+t.dataset.gdrop,{method:'PATCH',body:JSON.stringify({status:'dropped'})});ui.view='goals';setStatus('目的を手放しました。');await load();return;}
+    if(t.dataset.ms){const [gid,mid]=t.dataset.ms.split('|');await api(`/api/goals/${gid}/milestones/${mid}`,{method:'PATCH',body:JSON.stringify({done:t.checked})});await load();return;}
+    if(t.dataset.msadd){const v=$('ms-new').value.trim();if(!v){setStatus('道のりの名前を入れてください。',true);return;}await api(`/api/goals/${t.dataset.msadd}/milestones`,{method:'POST',body:JSON.stringify({title:v})});await load();return;}
     if(t.dataset.drawer!==undefined){ui.drawer=t.dataset.drawer||null;renderMemList();$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.dataset.view||t.dataset.node){
       if((recorder&&recorder.state==='recording')||live){setStatus('録音中です。止めてから切り替えてください。',true);return;}

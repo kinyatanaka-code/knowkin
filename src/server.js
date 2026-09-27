@@ -15,6 +15,7 @@ import {
   rotateLinkToken, signupState, tooManyAttempts, userFromLinkToken, userFromSession,
 } from './auth.js';
 import { buildMcpServer } from './mcp.js';
+import { addMilestone, setMilestone, snapshotGoals, updateGoal } from './goals.js';
 import { authUrl, googleEnabled, googleStatus, handleCallback, syncAll, syncUser, unlink } from './google.js';
 import { baseUrl, mcpUnauthorized, oauthRouter, revokeAllTokens, userIdFromAccessToken } from './oauth.js';
 
@@ -165,6 +166,15 @@ api.get('/photos/:id', wrap(async (req, res) => {
   if (!p) return res.status(404).end();
   res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(Buffer.from(p.data));
 }));
+api.patch('/goals/:id', wrap(async (req, res) => {
+  try { await updateGoal(req.uid, Number(req.params.id), req.body || {}); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }
+}));
+api.post('/goals/:id/milestones', wrap(async (req, res) => {
+  try { await addMilestone(req.uid, Number(req.params.id), req.body?.title); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }
+}));
+api.patch('/goals/:id/milestones/:mid', wrap(async (req, res) => {
+  try { await setMilestone(req.uid, Number(req.params.id), Number(req.params.mid), Boolean(req.body?.done)); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }
+}));
 api.patch('/categories/:id', wrap(async (req, res) => {
   const c = await updateCategory(req.uid, Number(req.params.id), req.body || {});
   if (!c) return res.status(404).json({ error: '見つかりません' });
@@ -240,6 +250,9 @@ app.delete('/mcp/:key', notAllowed);
 
 // ---- Gmail・Googleチャットの取り込み：毎時30分（3時間ごとの整理ルーティンの前に貯めておく） ----
 cron.schedule('30 * * * *', () => { syncAll().catch((e) => console.error('google sync failed', e)); }, { timezone: 'Asia/Tokyo' });
+
+// ---- 目的の足あと：毎日23:50に進み具合を記録 ----
+cron.schedule('50 23 * * *', () => { snapshotGoals().catch((e) => console.error('goal snapshot failed', e)); }, { timezone: 'Asia/Tokyo' });
 
 // ---- 夜間バッチ：毎日3時（日本時間）に核を育て直す（サーバー側のAIを使う場合のみ） ----
 cron.schedule('0 3 * * *', () => {

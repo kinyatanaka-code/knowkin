@@ -3,6 +3,7 @@ import { complete, aiEnabled } from './ai.js';
 import { askAudioJSON, canSummarizeAudio } from './audio.js';
 import { canTranscribe, transcribe } from './transcribe.js';
 import { toJpeg } from './photo.js';
+import { getGoals } from './goals.js';
 
 export const TYPES = {
   event: { label: '記憶', layer: '出来事' },
@@ -17,7 +18,7 @@ export const TYPES = {
   person: { label: '人物', layer: '関係' },
 };
 
-export const UNIT_COLS = `id, memo_id, type, genre, content, quote, reason, people, tags, due, importance, count,
+export const UNIT_COLS = `id, memo_id, type, genre, goal_id, content, quote, reason, people, tags, due, importance, count,
   done, done_at, reviewed, created_at, to_char(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS day,
   (SELECT c.label FROM categories c WHERE c.user_id = units.user_id AND c.key = units.type) AS type_label`;
 export const LAYER_IDS = ['event', 'know', 'think', 'act', 'rel'];
@@ -308,6 +309,8 @@ export async function saveUnitsForMemo(uid, memoId, units, { title = '', summary
 async function applyUnits(memo, list) {
   const today = todayJST();
   const keys = await typeKeys(memo.user_id);
+  const goalIds = new Set((await pool.query(`SELECT id FROM goals WHERE user_id = $1 AND status IN ('active','paused','candidate')`, [memo.user_id])).rows.map((r) => r.id));
+  const touched = new Set();
   let added = 0;
   let repeated = 0;
   const client = await pool.connect();
@@ -330,13 +333,15 @@ async function applyUnits(memo, list) {
         if (hit.rowCount) { repeated++; continue; }
       }
       await client.query(
-        `INSERT INTO units(user_id, memo_id, type, content, quote, reason, people, tags, due, importance, dates, genre)
-         VALUES($11, $1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::date], $12)`,
+        `INSERT INTO units(user_id, memo_id, type, content, quote, reason, people, tags, due, importance, dates, genre, goal_id)
+         VALUES($11, $1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::date], $12, $13)`,
         [memo.id, type, String(r.content), String(r.quote || ''), String(r.reason || ''),
-          strArr(r.people), strArr(r.tags), validDate(r.due), imp(r.importance), today, memo.user_id, String(r.genre || '').trim().slice(0, 20)],
+          strArr(r.people), strArr(r.tags), validDate(r.due), imp(r.importance), today, memo.user_id, String(r.genre || '').trim().slice(0, 20), goalIds.has(Number(r.goal_id)) ? Number(r.goal_id) : null],
       );
       added++;
+      if (goalIds.has(Number(r.goal_id))) touched.add(Number(r.goal_id));
     }
+    for (const g of touched) await client.query('UPDATE goals SET last_activity_at = now() WHERE id = $1', [g]);
     await client.query('UPDATE memos SET classified = TRUE WHERE id = $1', [memo.id]);
     await client.query('COMMIT');
   } catch (e) {
@@ -456,6 +461,11 @@ export async function updateUnit(uid, id, fields) {
   }
   if (typeof fields.reviewed === 'boolean') { params.push(fields.reviewed); sets.push(`reviewed = $${params.length}`); }
   if (fields.type && (await typeKeys(uid)).has(fields.type)) { params.push(fields.type); sets.push(`type = $${params.length}`); }
+  if (fields.goal_id !== undefined) {
+    const gid = fields.goal_id === null ? null : Number(fields.goal_id);
+    if (gid !== null && !(await pool.query('SELECT 1 FROM goals WHERE id = $1 AND user_id = $2', [gid, uid])).rows[0]) throw new Error('目的が見つかりません');
+    params.push(gid); sets.push(`goal_id = $${params.length}`);
+  }
   if (typeof fields.genre === 'string') { params.push(fields.genre.trim().slice(0, 20)); sets.push(`genre = $${params.length}`); }
   if (typeof fields.content === 'string' && fields.content.trim()) { params.push(fields.content.trim()); sets.push(`content = $${params.length}`); }
   if (fields.due !== undefined) { params.push(validDate(fields.due)); sets.push(`due = $${params.length}`); }
@@ -469,15 +479,16 @@ export async function deleteUnit(uid, id) {
 }
 
 export async function getState(uid) {
-  const [units, failed, core, recordings, photos, categories] = await Promise.all([
+  const [units, failed, core, recordings, photos, categories, goals] = await Promise.all([
     pool.query(`SELECT ${UNIT_COLS} FROM units WHERE user_id = $1 ORDER BY created_at DESC LIMIT 2000`, [uid]),
     pool.query(`SELECT id, text, recorded_at FROM memos WHERE user_id = $1 AND NOT classified ORDER BY recorded_at DESC LIMIT 50`, [uid]),
     getCore(uid),
     getRecentRecordings(uid, 10),
     getRecentPhotos(uid, 12),
     getCategories(uid),
+    getGoals(uid),
   ]);
-  return { units: units.rows, failed: failed.rows, core, recordings, photos, categories, canSummarizeAudio, canTranscribe };
+  return { units: units.rows, failed: failed.rows, core, recordings, photos, categories, goals, canSummarizeAudio, canTranscribe };
 }
 
 // ---- Claudeに渡すテキスト整形 ----

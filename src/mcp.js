@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { getGoals, goalsText, linkUnits, proposeGoal, setGoalNote } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
   getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getGenres, getUnitsWithoutGenre, setGenres, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
@@ -18,6 +19,7 @@ const unitSchema = z.object({
   importance: z.number().int().min(1).max(3).optional(),
   same_as: z.number().int().nullable().optional().describe('既存の記憶と同じ内容ならそのid'),
   genre: z.string().max(20).optional().describe('引き出しの名前（テーマ）。既存の引き出し名があればそれを使う'),
+  goal_id: z.number().int().nullable().optional().describe('この記憶が近づける目的のid（あれば）'),
 });
 
 const NEW_CATEGORY_RULE = `## 新しいカテゴリ
@@ -31,13 +33,21 @@ async function categoriesPart(uid) {
     ? cats.map((c) => `- ${c.key}: ${c.label}（層：${c.layer === 'new' ? c.layer_label + '（新しい層）' : c.layer}）${c.description ? ' … ' + c.description : ''}`).join('\n')
     : '（まだありません）';
   const genres = await getGenres(uid);
+  const goals = (await getGoals(uid)).filter((g) => g.status !== 'dropped');
   return `## 自動で作ったカテゴリ（type にそのまま使える）\n${list}\n\n${NEW_CATEGORY_RULE}
 
 ## 引き出し（genre）
 - 各ユニットに genre として、その記憶が入る「引き出し」の名前を付ける。引き出しは、層の中でテーマごとに記憶をまとめる箱（例：営業トーク、kinbot開発、インターン管理、マーケ連携）
 - 2〜8字程度の短い日本語にする。人物名は genre にせず people に入れる（関係の層は人物ごとに自動でまとまる）
 - 下の既存の引き出しに合うものがあれば、必ず同じ名前を使う。似た名前を増やさない
-- 既存の引き出し：${genres.length ? genres.map((g) => `${g.genre}（${g.n}）`).join('、') : '（まだありません）'}`;
+- 既存の引き出し：${genres.length ? genres.map((g) => `${g.genre}（${g.n}）`).join('、') : '（まだありません）'}
+
+## 目的（叶えたいこと）
+- タスク・判断・教訓などが下の目的のどれかに近づくものなら、goal_id にその目的の id を入れる。関係ないものには入れない
+- 本人が「〜したい」「〜になりたい」「いつか〜」など、仕事でもプライベートでも成し遂げたいこと・叶えたい未来を語っていたら、propose_goal で目的の候補を出す（本人が承認するまで目的にはならない）。type が goal の記憶も候補にする
+- すでにある目的や候補と同じものは出さない
+- 保存したあと、つながった記憶で現在地が変わった目的があれば、update_goal_position で現在地の一言を書き直す
+- 今の目的：${goals.length ? goals.map((g) => `id ${g.id}「${g.title}」${g.status === 'candidate' ? '（承認待ちの候補）' : ''}`).join('、') : '（まだありません）'}`;
 }
 
 export function buildMcpServer(uid) {
@@ -52,7 +62,8 @@ export function buildMcpServer(uid) {
   }, async () => {
     const n = await countUnclassified(uid);
     const note = n ? `\n\n（未整理のメモが${n}件あります。回答のあとで「knowkinの未整理メモを整理しますか？」と一言たずねてよい）` : '';
-    return text(coreText(await getCore(uid), await getOpenTasks(uid)) + note);
+    const gt = goalsText(await getGoals(uid));
+    return text(coreText(await getCore(uid), await getOpenTasks(uid)) + (gt ? `\n\n${gt}\n（相談に答えるときは、どの目的に効くかも意識すること）` : '') + note);
   });
 
   server.registerTool('get_current_tasks', {
@@ -201,6 +212,7 @@ ${JSON.stringify(existing)}${photoPart}`);
     const units = await getUnitsWithoutGenre(uid);
     if (!units.length) return text('引き出しが決まっていない記憶はありません。');
     const genres = await getGenres(uid);
+  const goals = (await getGoals(uid)).filter((g) => g.status !== 'dropped');
     return text(`次の記憶に、テーマごとの引き出しの名前（genre、2〜8字）を付けて set_drawers で保存してください。
 人物名は引き出しにしない（関係の層は人物ごとに自動でまとまる）。既存の引き出しに合うものは同じ名前を使い、似た名前を増やさない。
 既存の引き出し：${genres.length ? genres.map((g) => g.genre).join('、') : '（まだありません）'}
@@ -213,6 +225,53 @@ ${JSON.stringify(units)}`);
     description: 'get_units_without_drawer で取得した記憶に、引き出しの名前（genre）を付けて保存する。',
     inputSchema: { items: z.array(z.object({ id: z.number().int(), genre: z.string().min(1).max(20) })).max(200) },
   }, async ({ items }) => text(`${await setGenres(uid, items)}件を引き出しに入れました。`));
+
+  server.registerTool('get_goals', {
+    title: '目的と現在地',
+    description: 'ユーザー本人の目的（仕事・プライベートで成し遂げたいこと）と、それぞれの道のり・進み具合・現在地を返す。将来やキャリア、何を優先すべきかの相談で使う。',
+    annotations: { readOnlyHint: true },
+  }, async () => {
+    const gt = goalsText(await getGoals(uid));
+    return text(gt || '目的はまだありません。');
+  });
+
+  server.registerTool('propose_goal', {
+    title: '目的の候補を出す',
+    description: '本人が話した「成し遂げたいこと・叶えたい未来」を、目的の候補として出す。本人がknowkinで承認するまで目的にはならない。すでにある目的と同じものは出さない。',
+    inputSchema: {
+      title: z.string().describe('目的の名前（20字以内が目安。例：インターンで月200件のアポ体制を作る）'),
+      area: z.enum(['work', 'life']).describe('work=仕事 / life=プライベート'),
+      future: z.string().describe('叶えたい未来の姿（本人の言葉に近く、1文）'),
+      why: z.string().optional().describe('なぜそうしたいか（話していれば。なければ空）'),
+      criteria: z.string().optional().describe('どうなったら叶ったと言えるか（話していれば）'),
+      due: z.string().nullable().optional().describe('期限 YYYY-MM-DD（話していれば）'),
+      milestones: z.array(z.string()).max(7).optional().describe('目的までの中間地点（道のり）を順番に3〜5個'),
+      memo_id: z.number().int().optional().describe('もとになったメモのid'),
+    },
+  }, async (args) => {
+    try { const id = await proposeGoal(uid, args); return text(`目的の候補「${args.title}」（id ${id}）を出しました。本人がknowkinの「見直し」で承認すると目的になります。`); }
+    catch (e) { return text(`出せませんでした：${e.message}`); }
+  });
+
+  server.registerTool('link_to_goal', {
+    title: '記憶を目的につなぐ',
+    description: 'すでにある記憶（タスク・判断・教訓など）を、それが近づける目的につなぐ。goal_id に null を入れると外す。',
+    inputSchema: { goal_id: z.number().int().nullable(), unit_ids: z.array(z.number().int()).min(1).max(100) },
+  }, async ({ goal_id: gid, unit_ids: ids }) => {
+    try { return text(`${await linkUnits(uid, gid, ids)}件をつなぎました。`); } catch (e) { return text(`つなげませんでした：${e.message}`); }
+  });
+
+  server.registerTool('update_goal_position', {
+    title: '目的の現在地を書き直す',
+    description: '目的の「現在地」の一言（今どこにいて、次に何が効くか）を書き直す。記録からはっきり済んだとわかる道のりがあれば done にする。',
+    inputSchema: {
+      goal_id: z.number().int(),
+      note: z.string().describe('現在地の一言（2文まで。例：道のりは半分手前。先週の実績は月ペースで150件。次は週ごとのラップを回すことが効きそう）'),
+      milestones: z.array(z.object({ id: z.number().int(), done: z.boolean() })).optional().describe('状態を変える道のり'),
+    },
+  }, async ({ goal_id: gid, note, milestones }) => {
+    try { await setGoalNote(uid, gid, note, milestones || []); return text('現在地を書き直しました。'); } catch (e) { return text(`書き直せませんでした：${e.message}`); }
+  });
 
   server.registerTool('check_imported', {
     title: '取り込み済みか確認',
