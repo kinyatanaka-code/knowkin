@@ -129,7 +129,11 @@ button{cursor:pointer}
 .agc-stall{color:#B7791F;margin-left:4px}
 .agc-title{font-size:16px;font-weight:700}
 .agc-now{font-size:12px;color:var(--muted)}.agc-now b{color:var(--g)}
-.agc-more{align-self:flex-end;background:none;border:0;color:var(--g);font-size:12px;padding:0 14px 10px}
+.agc-foot{display:flex;align-items:center;gap:8px;padding:0 14px 10px}
+.agc-more{margin-left:auto;background:none;border:0;color:var(--g);font-size:12px;padding:0}
+.agc-gen{background:var(--soft);border:1px solid var(--g);color:var(--g);border-radius:999px;font-size:12px;padding:3px 10px;font-weight:700}
+.agc-req{font-size:12px;color:var(--muted)}
+.tprop{margin:3px 0 0;font-size:12px;color:var(--g,#6FCF97)}
 .actview .gpath{--gc:var(--g)!important}.actview .agc.life .gpath{--gc:var(--g2)!important}
 .actview .gpath .fill,.actview .gpath .ms.done,.actview .gpath::before{background:var(--gc)!important}.actview .gpath .ms.done{border-color:var(--gc)!important}.actview .gpath .flag{color:var(--gc)!important}
 .actview .gpath .here{background:#fff;border:3px solid var(--gc);box-shadow:none;width:14px;height:14px}
@@ -447,6 +451,7 @@ function renderGoal(p){
     ${g.milestones.length?`<ul class="msl">${g.milestones.map(m=>`<li class="${m.done?'done':''}"><input type="checkbox" class="check" data-ms="${g.id}|${m.id}" ${m.done?'checked':''} aria-label="済みにする"><span>${esc(m.title)}</span>${m.now?'<span class="nowtag">今ここ</span>':''}</li>`).join('')}</ul>`:'<p class="empty" style="padding:8px 0">道のりはまだありません。</p>'}
     <div class="copyrow" style="margin-top:10px"><input id="ms-new" type="text" placeholder="道のりを足す（例：月150件を達成する）" aria-label="道のりを足す"><button class="ghost" data-msadd="${g.id}">追加</button></div>
     <h4>つながっているタスク</h4>
+    ${g.task_request_at?`<p class="hint" style="margin:0 0 8px">タスクづくりを依頼中です。次の整理のときにClaudeが、これまでの知識をもとにタスクを作って「提案」として入れます。</p>`:`<div class="actions" style="justify-content:flex-start;margin:0 0 8px"><button class="ghost" data-greqtasks="${g.id}">これまでの知識でタスクを作る</button></div>`}
     ${tasks.length?`<ul class="list">${tasks.map(u=>unitHTML(u)).join('')}</ul>`:'<p class="empty" style="padding:8px 0">まだありません。整理のときにClaudeがつなげます。</p>'}
     ${others.length?`<h4>つながっている記憶</h4><ul class="list">${others.map(u=>unitHTML(u)).join('')}</ul>`:''}
     <div class="actions" style="justify-content:flex-start;margin-top:18px">
@@ -920,6 +925,7 @@ function taskRowHTML(u){
   const when=!u.scope&&!u.due?'いつか':u.scope?({day:'日',week:'週',month:'月',year:'年'}[u.scope]):'期限';
   return `<li class="trow${u.done?' done':''}"><input type="checkbox" class="check" data-done="${u.id}" ${u.done?'checked':''} aria-label="完了にする">
     <div class="body"><p class="content">${esc(u.content)}</p>
+    ${(u.tags||[]).includes('提案')&&!u.reviewed?`<p class="tprop">Claudeの提案${u.reason?`：${esc(u.reason)}`:''}</p>`:''}
     <div class="meta"><span class="abadge ${areaOf(u)}">${areaOf(u)==='life'?'プライベート':'仕事'}</span>${u.due?`<span>期限 ${esc(u.due)}</span>`:''}${g?`<span class="goaltag" style="margin:0">★ ${esc(g.title)}</span>`:''}${(u.people||[]).length?`<span>${esc(u.people.join('、'))}</span>`:''}</div>
     <div class="row-actions"><select data-move="${u.id}" aria-label="やる時期">
       <option value="">時期：${when}</option><option value="day">今日にやる</option><option value="week">今週にやる</option><option value="month">今月にやる</option><option value="year">今年にやる</option><option value="none">いつか</option></select>
@@ -982,7 +988,7 @@ function actGoalCard(g){
     <span class="agc-top"><span class="agc-star" aria-hidden="true"></span>${g.area==='life'?'プライベート':'仕事'}${g.due?`・${esc(g.due.slice(5).replace('-','/'))}まで`:''}${g.stalled?`<span class="agc-stall">${g.idle_days}日動きなし</span>`:''}<b class="agc-pct">${g.progress}%</b></span>
     <span class="agc-title">${esc(g.title)}</span>${gpathHTML(g)}
     <span class="agc-now"><b>今ここ</b> ${g.milestones.length?`道のり ${d}/${g.milestones.length}・`:''}タスク ${g.tasks_done}/${g.tasks_total}</span></button>
-    <button type="button" class="agc-more" data-actgoal="${g.id}">詳しく ›</button></div>`;
+    <span class="agc-foot">${g.task_request_at?'<span class="agc-req">タスクづくり依頼中</span>':`<button type="button" class="agc-gen" data-greqtasks="${g.id}">＋ 知識からタスクを作る</button>`}<button type="button" class="agc-more" data-actgoal="${g.id}">詳しく ›</button></span></div>`;
 }
 function renderActView(){
   const v=$('actview');const d=new Date();
@@ -1114,6 +1120,7 @@ document.addEventListener('click',async e=>{
     if(t.dataset.copy){const i=$(t.dataset.copy);i.select();try{await navigator.clipboard.writeText(i.value);t.textContent='コピーしました';setTimeout(()=>{t.textContent='コピー';},1500);}catch(_){}return;}
     if(t.id==='pwBtn'){try{await api('/api/account/password',{method:'POST',body:JSON.stringify({current:$('pw-cur').value,next:$('pw-new').value})});authMode='login';showLogin('パスワードを変えました。新しいパスワードでログインしてください。');}catch(err){setStatus(err.message,true);}return;}
     if(t.dataset.goal){if((recorder&&recorder.state==='recording')||live||prog){setStatus('録音・アップロードの処理中です。',true);return;}ui.view='goal';ui.goal=Number(t.dataset.goal);ui.armed=null;setStatus('');render();$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
+    if(t.dataset.greqtasks){await api(`/api/goals/${t.dataset.greqtasks}/request-tasks`,{method:'POST'});setStatus('依頼しました。次の整理のときにClaudeがタスクを作ります。すぐ作るなら会話で「knowkinの目的からタスクを作って」と頼んでください。');await load();return;}
     if(t.dataset.gapprove){await api('/api/goals/'+t.dataset.gapprove,{method:'PATCH',body:JSON.stringify({status:'active'})});setStatus('目的にしました。ネットワークに星として現れます。');await load();return;}
     if(t.dataset.greject){const k='gr'+t.dataset.greject;if(ui.armed!==k){ui.armed=k;render();return;}ui.armed=null;await api('/api/goals/'+t.dataset.greject,{method:'PATCH',body:JSON.stringify({status:'dropped'})});setStatus('候補を見送りました。');await load();return;}
     if(t.dataset.gpin){const g=goalsAll().find(x=>x.id===Number(t.dataset.gpin));await api('/api/goals/'+g.id,{method:'PATCH',body:JSON.stringify({pinned:!g.pinned})});await load();return;}

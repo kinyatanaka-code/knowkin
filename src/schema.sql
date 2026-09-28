@@ -167,3 +167,6 @@ CREATE TABLE IF NOT EXISTS goal_snapshots (
 ALTER TABLE units ADD COLUMN IF NOT EXISTS area TEXT NOT NULL DEFAULT '';     -- work / life
 ALTER TABLE units ADD COLUMN IF NOT EXISTS scope TEXT NOT NULL DEFAULT '';    -- year / month / week / day
 ALTER TABLE units ADD COLUMN IF NOT EXISTS period TEXT NOT NULL DEFAULT '';   -- 2026 / 2026-09 / 2026-W40 / 2026-09-28
+
+-- 目的からタスクを作ってほしいという依頼
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS task_request_at TIMESTAMPTZ;

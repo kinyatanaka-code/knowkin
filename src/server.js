@@ -15,7 +15,7 @@ import {
   rotateLinkToken, signupState, tooManyAttempts, userFromLinkToken, userFromSession,
 } from './auth.js';
 import { buildMcpServer } from './mcp.js';
-import { addMilestone, setMilestone, snapshotGoals, updateGoal } from './goals.js';
+import { addMilestone, requestTasks, setMilestone, snapshotGoals, updateGoal } from './goals.js';
 import { authUrl, googleEnabled, googleStatus, handleCallback, syncAll, syncUser, unlink } from './google.js';
 import { baseUrl, mcpUnauthorized, oauthRouter, revokeAllTokens, userIdFromAccessToken } from './oauth.js';
 
@@ -171,6 +171,9 @@ api.post('/tasks', wrap(async (req, res) => {
 }));
 api.patch('/goals/:id', wrap(async (req, res) => {
   try { await updateGoal(req.uid, Number(req.params.id), req.body || {}); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }
+}));
+api.post('/goals/:id/request-tasks', wrap(async (req, res) => {
+  try { await requestTasks(req.uid, Number(req.params.id)); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }
 }));
 api.post('/goals/:id/milestones', wrap(async (req, res) => {
   try { await addMilestone(req.uid, Number(req.params.id), req.body?.title); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }

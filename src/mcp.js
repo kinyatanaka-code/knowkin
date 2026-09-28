@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { getGoals, goalsText, linkUnits, proposeGoal, setGoalNote } from './goals.js';
+import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, setGoalNote } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
   getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getGenres, getUnitsWithoutGenre, setGenres, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
@@ -155,7 +155,9 @@ export function buildMcpServer(uid) {
   }, async () => {
     const memos = await getUnclassified(uid, 20);
     const photos = await getUnclassifiedPhotos(uid, 4);
-    if (!memos.length && !photos.length) return text('未整理のメモはありません。');
+    const reqs = await pendingTaskRequests(uid);
+    const reqPart = reqs.length ? `\n\n## タスクづくりを頼まれている目的\n次の目的について、get_goal_context で材料を読み、これまでの知識をもとにタスクを作って add_goal_tasks で入れてください：${reqs.map((r) => `id ${r.id}「${r.title}」`).join('、')}` : '';
+    if (!memos.length && !photos.length) return text(reqs.length ? `未整理のメモはありません。${reqPart}` : '未整理のメモはありません。');
     const existing = await getDedupList(uid);
     const photoPart = photos.length ? `
 
@@ -181,7 +183,7 @@ ${await categoriesPart(uid)}
 ${JSON.stringify(memos)}
 
 ## 既存の記憶（重複判定用）
-${JSON.stringify(existing)}${photoPart}`);
+${JSON.stringify(existing)}${photoPart}${reqPart}`);
     for (const p of photos) {
       intro.content.push({ type: 'text', text: `写真のメモ id ${p.id}${p.text && p.text !== '（写真）' ? `（ひとこと：${p.text}）` : ''}` });
       intro.content.push({ type: 'image', data: Buffer.from(p.data).toString('base64'), mimeType: p.mime });
@@ -279,6 +281,63 @@ ${JSON.stringify(units)}`);
     },
   }, async ({ goal_id: gid, note, milestones }) => {
     try { await setGoalNote(uid, gid, note, milestones || []); return text('現在地を書き直しました。'); } catch (e) { return text(`書き直せませんでした：${e.message}`); }
+  });
+
+  server.registerTool('get_goal_context', {
+    title: '目的からタスクを作る材料',
+    description: 'ユーザーが「knowkinの目的からタスクを作って」と頼んだとき、または整理のときにタスクづくりを頼まれている目的があるときに呼ぶ。目的・道のり・つながった記憶・これまでの教訓や判断・今あるタスクを返す。',
+    inputSchema: { goal_id: z.number().int() },
+    annotations: { readOnlyHint: true },
+  }, async ({ goal_id: gid }) => {
+    try {
+      const c = await goalContext(uid, gid);
+      const g = c.goal;
+      return text(`# 目的 id ${g.id}「${g.title}」（${g.area === 'life' ? 'プライベート' : '仕事'}${g.due ? `・${g.due}まで` : ''}）進み具合 ${g.progress}%
+叶えたい未来：${g.future || '（なし）'}
+達成の基準：${g.criteria || '（なし）'}
+道のり：${g.milestones.map((m) => `${m.done ? '✓' : m.now ? '▶' : '・'}${m.title}（id ${m.id}）`).join(' → ') || '（なし）'}
+現在地：${g.note || '（なし）'}
+
+## 作り方
+- これまでの知識（下の教訓・判断・価値観・核）を根拠にして、目的に近づく具体的なタスクを3〜7個作る。一般論ではなく、本人の記録に書かれた事情・人・数字に沿わせる
+- なるべく「今ここ」の道のりから順に。1つのタスクは1回で終わる大きさにし、誰と・何を・いつまでにがわかる文にする
+- 各タスクに milestone_id（どの道のりのためか）、scope（day / week / month）か due、reason（根拠にした知識を1文で）を付ける
+- すでにある未完了のタスクと同じものは作らない
+- 記録に書かれていない数字や事実は作らない。必要な数字がわからないときは「〜を決める」「〜を確認する」というタスクにする
+
+## この目的につながっている記憶
+${JSON.stringify(c.linked)}
+
+## 本人の核
+${JSON.stringify(c.core)}
+
+## これまでの知識（よく出てくる順）
+${JSON.stringify(c.knowledge)}
+
+## 今ある未完了のタスク（重複しないように）
+${JSON.stringify(c.open)}`);
+    } catch (e) { return text(`読めませんでした：${e.message}`); }
+  });
+
+  server.registerTool('add_goal_tasks', {
+    title: '目的のタスクを入れる',
+    description: 'get_goal_context をもとに作ったタスクを、目的につないで「提案」として入れる。本人が「見直し」で確認する。',
+    inputSchema: {
+      goal_id: z.number().int(),
+      tasks: z.array(z.object({
+        content: z.string().min(1).describe('タスク（誰と・何を・いつまでにがわかる1文）'),
+        milestone_id: z.number().int().optional().describe('どの道のりのためか'),
+        milestone_title: z.string().optional(),
+        scope: z.enum(['day', 'week', 'month', 'year']).optional(),
+        period: z.string().optional(),
+        due: z.string().nullable().optional().describe('YYYY-MM-DD'),
+        reason: z.string().describe('根拠にした知識（1文）'),
+        genre: z.string().max(20).optional(),
+      })).min(1).max(10),
+    },
+  }, async ({ goal_id: gid, tasks }) => {
+    try { return text(`${await addGoalTasks(uid, gid, tasks)}件のタスクを「提案」として入れました。本人が見直しで確認します。`); }
+    catch (e) { return text(`入れられませんでした：${e.message}`); }
   });
 
   server.registerTool('check_imported', {

@@ -19,7 +19,7 @@ function progressOf(g, ms, tasks) {
 export async function getGoals(uid, { includeClosed = false } = {}) {
   const { rows: goals } = await pool.query(
     `SELECT g.id, g.user_id, g.title, g.area, g.future, g.why, g.criteria, to_char(g.due, 'YYYY-MM-DD') AS due, g.status, g.pinned,
-       g.note, g.note_at, g.source_memo_id, g.last_activity_at, g.created_at
+       g.note, g.note_at, g.source_memo_id, g.last_activity_at, g.created_at, g.task_request_at
      FROM goals g WHERE g.user_id = $1 ${includeClosed ? '' : "AND g.status IN ('candidate','active','paused')"}
      ORDER BY (g.status = 'candidate') DESC, g.pinned DESC, g.due ASC NULLS LAST, g.created_at`, [uid]);
   if (!goals.length) return [];
@@ -134,4 +134,57 @@ export function goalsText(goals) {
   }
   if (cand.length) L.push('', '## 承認待ちの目的の候補', ...cand.map((g) => `- [id ${g.id}] ${g.title}`));
   return L.join('\n');
+}
+
+// ---- 目的からタスクを作る ----
+export async function requestTasks(uid, goalId) {
+  const g = await own(uid, goalId);
+  if (g.status !== 'active' && g.status !== 'paused') throw new Error('進行中の目的だけタスクを作れます');
+  await pool.query('UPDATE goals SET task_request_at = now() WHERE id = $1', [goalId]);
+}
+export async function pendingTaskRequests(uid) {
+  const { rows } = await pool.query(
+    `SELECT id, title FROM goals WHERE user_id = $1 AND task_request_at IS NOT NULL AND status IN ('active','paused') ORDER BY task_request_at`, [uid]);
+  return rows;
+}
+
+/** タスクづくりの材料：目的・道のり・つながった記憶・これまでの知識 */
+export async function goalContext(uid, goalId) {
+  const goals = await getGoals(uid);
+  const g = goals.find((x) => x.id === goalId);
+  if (!g) throw new Error('目的が見つかりません');
+  const [{ rows: linked }, { rows: knowledge }, { rows: core }, { rows: open }] = await Promise.all([
+    pool.query(`SELECT id, type, content, reason, done, due FROM units WHERE user_id = $1 AND goal_id = $2 ORDER BY created_at`, [uid, goalId]),
+    pool.query(`SELECT id, type, content, quote, reason, people, count FROM units
+      WHERE user_id = $1 AND type IN ('lesson','decision','value','input','person','idea','question')
+      ORDER BY count DESC, importance DESC, created_at DESC LIMIT 60`, [uid]),
+    pool.query('SELECT data FROM cores WHERE user_id = $1', [uid]),
+    pool.query(`SELECT id, content, due FROM units WHERE user_id = $1 AND type IN ('task','goal') AND NOT done ORDER BY created_at DESC LIMIT 60`, [uid]),
+  ]);
+  return { goal: g, linked, knowledge, core: core[0]?.data || null, open };
+}
+
+/** Claudeが作ったタスクを、目的につないで「提案」として入れる（本人が見直しで確認する） */
+export async function addGoalTasks(uid, goalId, tasks) {
+  const g = await own(uid, goalId);
+  const { rows: ms } = await pool.query('SELECT id FROM milestones WHERE goal_id = $1', [goalId]);
+  const msIds = new Set(ms.map((m) => m.id));
+  const { rows: memo } = await pool.query(
+    `INSERT INTO memos(user_id, text, source, classified) VALUES($1, $2, 'claude', TRUE) RETURNING id`,
+    [uid, `【目的「${g.title}」からClaudeが作ったタスク】\n` + tasks.map((t) => `- ${t.content}`).join('\n')]);
+  const today = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo' }).format(new Date());
+  const { resolveTiming } = await import('./period.js');
+  let n = 0;
+  for (const t of tasks.slice(0, 10)) {
+    const content = s(t.content, 300); if (!content) continue;
+    const tm = resolveTiming({ scope: t.scope, period: t.period, due: date(t.due) });
+    const reason = [t.milestone_id && msIds.has(t.milestone_id) ? `道のり：${t.milestone_title || ''}` : '', s(t.reason, 300)].filter(Boolean).join(' ／ ');
+    await pool.query(
+      `INSERT INTO units(user_id, memo_id, type, content, reason, tags, due, importance, dates, goal_id, area, scope, period, genre)
+       VALUES($1, $2, 'task', $3, $4, ARRAY['提案'], $5, 2, ARRAY[$6::date], $7, $8, $9, $10, $11)`,
+      [uid, memo[0].id, content, reason, date(t.due), today, goalId, g.area, tm.scope, tm.period, s(t.genre, 20)]);
+    n++;
+  }
+  await pool.query('UPDATE goals SET task_request_at = NULL, last_activity_at = now() WHERE id = $1', [goalId]);
+  return n;
 }
