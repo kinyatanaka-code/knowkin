@@ -98,6 +98,63 @@ button{cursor:pointer}
 .msl{list-style:none;margin:0;padding:0}.msl li{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
 .msl li.done span{text-decoration:line-through;color:var(--muted)}.msl .nowtag{margin-left:auto;font-size:12px;color:var(--gc)}
 .goaltag{margin-left:6px;font-size:11px;font-weight:500;color:#FFD66B;border:1px solid rgba(255,214,107,.5);border-radius:999px;padding:0 6px}
+.lock{overflow:hidden}
+.lock #status{position:fixed;left:16px;right:16px;bottom:78px;z-index:60;margin:0;padding:9px 14px;border-radius:12px;background:#16372A;color:#fff;font-size:13px;box-shadow:0 4px 16px rgba(0,0,0,.18)}
+.lock #status.err{background:#8A3B12;color:#fff}
+.lock #status:empty{display:none}
+.actview{position:fixed;inset:0;z-index:50;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  --bg:#FFFFFF;--bg2:#F6FAF7;--surface:#FFFFFF;--surface2:#E3EFE7;--ink:#16372A;--muted:#6B7F74;--line:#DDE8E1;--cyan:#1F7A4D;--accent-ink:#FFFFFF;--pink:#1F7A4D;--red:#B7791F;--g:#1F7A4D;--g2:#4FA57A;--soft:#EAF5EE;--l-rel:#1F7A4D;
+  background:var(--bg);color:var(--ink);color-scheme:light;
+  padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);
+  clip-path:circle(0 at var(--ox,50%) var(--oy,50%));transition:clip-path .32s ease}
+.actview.open{clip-path:circle(150% at var(--ox,50%) var(--oy,50%))}
+@media (prefers-reduced-motion:reduce){.actview{transition:none}}
+.av-top{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--bg);border-bottom:1px solid var(--line)}
+.av-back{width:36px;height:36px;border-radius:50%;border:1px solid var(--line);background:var(--bg);font-size:20px;line-height:1;color:var(--ink)}
+.av-orb{width:28px;height:28px;border-radius:50%;background:var(--soft);border:2px solid var(--g);display:flex;align-items:center;justify-content:center}.av-orb::after{content:'';width:11px;height:11px;border-radius:50%;background:var(--g)}
+.av-top h1{margin:0;font-size:21px;letter-spacing:.06em}.av-date{margin-left:auto;font-size:13px;color:var(--muted)}
+.av-body{max-width:720px;margin:0 auto;padding:6px 16px 90px}
+.av-sh{display:flex;justify-content:space-between;align-items:baseline;margin:18px 0 8px}.av-sh h2{margin:0;font-size:14px;font-weight:500;color:var(--muted);letter-spacing:.1em}
+.actview .linkbtn{color:var(--g)}
+.av-cand{display:flex;align-items:center;gap:10px;padding:10px 12px;margin:0 0 10px;background:var(--soft);border:1px dashed var(--g);border-radius:12px;font-size:14px}
+.av-cand small{color:var(--muted)}.av-cand button{margin-left:auto;flex:none;background:var(--g);color:#fff;border:0;border-radius:8px;padding:6px 12px;font-weight:700}
+.av-goals{display:flex;gap:10px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 16px;margin:0 -16px;padding:2px 16px 8px}
+.agc{flex:0 0 78%;max-width:340px;scroll-snap-align:start;border:1px solid var(--line);border-radius:16px;background:var(--bg);display:flex;flex-direction:column}
+.agc.sel{border-color:var(--g);box-shadow:0 0 0 1px var(--g) inset;background:var(--soft)}
+.agc-main{display:flex;flex-direction:column;gap:6px;text-align:left;background:none;border:0;padding:12px 14px 6px;color:var(--ink)}
+.agc-top{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.agc-star{width:16px;height:16px;background:var(--g);clip-path:polygon(50% 0,60% 40%,100% 50%,60% 60%,50% 100%,40% 60%,0 50%,40% 40%)}
+.agc.life .agc-star{background:var(--g2)}
+.agc-pct{margin-left:auto;font-size:16px;color:var(--g)}.agc.life .agc-pct{color:var(--g2)}
+.agc-stall{color:#B7791F;margin-left:4px}
+.agc-title{font-size:16px;font-weight:700}
+.agc-now{font-size:12px;color:var(--muted)}.agc-now b{color:var(--g)}
+.agc-more{align-self:flex-end;background:none;border:0;color:var(--g);font-size:12px;padding:0 14px 10px}
+.actview .gpath{--gc:var(--g)!important}.actview .agc.life .gpath{--gc:var(--g2)!important}
+.actview .gpath .fill,.actview .gpath .ms.done,.actview .gpath::before{background:var(--gc)!important}.actview .gpath .ms.done{border-color:var(--gc)!important}.actview .gpath .flag{color:var(--gc)!important}
+.actview .gpath .here{background:#fff;border:3px solid var(--gc);box-shadow:none;width:14px;height:14px}
+.av-empty{color:var(--muted);font-size:14px}
+.actview .seg{background:var(--bg2)}
+.actview .seg button[aria-selected="true"]{background:var(--g);color:#fff}
+.actview .seg.sub button[aria-selected="true"]{background:var(--soft);color:var(--g);box-shadow:0 0 0 1px var(--g) inset}
+.actview .pnav button:not(.linkbtn){background:var(--bg)}
+.actview .pcount{margin-left:auto;font-style:normal;font-size:13px;color:var(--muted)}
+.actview .tbar{height:6px;border-radius:999px;background:var(--surface2);overflow:hidden;margin:0 0 12px}.actview .tbar span{display:block;height:100%;background:var(--g)}
+.actview .tadd input{background:var(--bg2)}
+.actview .primary{background:var(--g);color:#fff;box-shadow:none}
+.actview .check{accent-color:var(--g)}
+.actview .abadge.work{color:var(--g);border-color:var(--g)}.actview .abadge.life{color:var(--g2);border-color:var(--g2);background:var(--soft)}
+.actview .goaltag{color:var(--g);border-color:var(--g)}
+.actview .warn{color:#B7791F}
+.actview h4{color:var(--muted)}
+.gfilter{display:flex;align-items:center;gap:8px;margin:0 0 8px;padding:6px 12px;border-radius:999px;background:var(--soft,rgba(255,214,107,.1));color:var(--g,#FFD66B);font-size:13px;font-weight:700}
+.gfilter .linkbtn{margin-left:auto;font-size:12px}
+.pcount{margin-left:auto;font-style:normal;font-size:13px;color:var(--muted)}
+.tbar{height:6px;border-radius:999px;background:var(--surface2);overflow:hidden;margin:0 0 12px}.tbar span{display:block;height:100%;background:var(--cyan)}
+.av-tab{position:fixed;left:0;right:0;bottom:0;z-index:3;display:flex;justify-content:space-around;background:var(--bg);border-top:1px solid var(--line);padding:8px 0 calc(10px + env(safe-area-inset-bottom,0px))}
+.av-tab button{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:0;font-size:11px;color:var(--muted);min-width:64px}
+.av-tab button span{width:8px;height:8px;border-radius:50%;background:currentColor}
+.av-tab .on{color:var(--g);font-weight:700}
 .magnets{display:flex;gap:10px;justify-content:flex-end;margin:12px 2px 0;flex-wrap:wrap}
 .magnet{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 16px;font-size:14px;display:flex;gap:8px;align-items:center}
 .magnet::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
@@ -259,6 +316,7 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
     <section class="panel" id="panel" aria-live="polite"></section>
     <p class="status" id="status" role="status" aria-live="polite"></p>
   </main>
+  <div id="actview" class="actview" hidden role="dialog" aria-modal="true" aria-label="行動"></div>
 </div>
 
 <script>
@@ -867,10 +925,11 @@ function taskRowHTML(u){
       <option value="">時期：${when}</option><option value="day">今日にやる</option><option value="week">今週にやる</option><option value="month">今月にやる</option><option value="year">今年にやる</option><option value="none">いつか</option></select>
       <button data-area="${u.id}">${areaOf(u)==='life'?'仕事にする':'プライベートにする'}</button></div></div></li>`;
 }
-function renderTasks(p){
+function renderTasks(p,{embedded=false}={}){
   const sc=ui.tscope||'day';const d=ui.tdate||new Date();const key=periodKey(sc,d);const [vs,ve]=rangeOf(sc,key);
   const af=ui.tarea||'all';const isCur=key===periodKey(sc,new Date());
-  const tasks=state.units.filter(isTask).filter(u=>af==='all'||areaOf(u)===af);
+  const gsel=ui.tgoal&&goalsAll().find(g=>g.id===ui.tgoal);if(!gsel)ui.tgoal=null;
+  const tasks=state.units.filter(isTask).filter(u=>af==='all'||areaOf(u)===af).filter(u=>!ui.tgoal||u.goal_id===ui.tgoal);
   const inView=[],carry=[],someday=[];
   for(const u of tasks){const r=effRange(u);
     if(!r){if(!u.done)someday.push(u);continue;}
@@ -879,10 +938,13 @@ function renderTasks(p){
   const byDue=(a,b)=>String(a.due||'9999').localeCompare(String(b.due||'9999'));
   const open=inView.filter(u=>!u.done).sort(byDue),done=inView.filter(u=>u.done);
   const n=a=>state.units.filter(isTask).filter(u=>{if(u.done||areaOf(u)!==a)return false;const r=effRange(u);return r&&r[0]>=vs&&r[0]<=ve;}).length;
-  p.innerHTML=`<h2>行動</h2><p class="lead">タスクを、年・月・週・日と、仕事・プライベートで分けて管理します。</p>
+  const tot=open.length+done.length;const pct=tot?Math.round(done.length/tot*100):0;
+  p.innerHTML=`${embedded?'':`<h2>行動</h2><p class="lead">タスクを、年・月・週・日と、仕事・プライベートで分けて管理します。</p>`}
   <div class="seg" role="tablist" aria-label="期間">${['day','week','month','year'].map(s=>`<button role="tab" data-tscope="${s}" aria-selected="${sc===s}">${SCOPE_LBL[s]}</button>`).join('')}</div>
   <div class="seg sub" role="tablist" aria-label="分野"><button role="tab" data-tarea="all" aria-selected="${af==='all'}">すべて</button><button role="tab" data-tarea="work" aria-selected="${af==='work'}">仕事 ${n('work')}</button><button role="tab" data-tarea="life" aria-selected="${af==='life'}">プライベート ${n('life')}</button></div>
-  <div class="pnav"><button type="button" data-tshift="-1" aria-label="前へ">‹</button><span>${periodTitle(sc,d)}</span><button type="button" data-tshift="1" aria-label="次へ">›</button>${isCur?'':'<button type="button" class="linkbtn" data-tshift="0">今に戻る</button>'}</div>
+  ${gsel?`<div class="gfilter">★ ${esc(gsel.title)} のタスクだけ<button type="button" class="linkbtn" data-tgoal="${gsel.id}">解除</button></div>`:''}
+  <div class="pnav"><button type="button" data-tshift="-1" aria-label="前へ">‹</button><span>${periodTitle(sc,d)}</span><button type="button" data-tshift="1" aria-label="次へ">›</button>${isCur?'':'<button type="button" class="linkbtn" data-tshift="0">今に戻る</button>'}${tot?`<em class="pcount">${done.length} / ${tot} 完了</em>`:''}</div>
+  ${tot?`<div class="tbar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="この期間の完了"><span style="width:${pct}%"></span></div>`:''}
   <div class="tadd"><input id="t-new" type="text" placeholder="${{day:'今日',week:'この週',month:'この月',year:'この年'}[sc]}にやることを足す" aria-label="タスクを足す"><select id="t-area" aria-label="分野"><option value="work"${af==='life'?'':' selected'}>仕事</option><option value="life"${af==='life'?' selected':''}>プライベート</option></select><button class="primary" type="button" id="t-add">追加</button></div>
   ${carry.length?`<h4>持ち越し <span class="warn">${carry.length}</span></h4><ul class="list">${carry.sort(byDue).map(taskRowHTML).join('')}</ul>`:''}
   <h4>${periodTitle(sc,d)}のタスク <span class="muted">${open.length}</span></h4>
@@ -894,12 +956,53 @@ function renderTasks(p){
 async function addTaskUI(){
   const v=$('t-new').value.trim();if(!v){setStatus('タスクの内容を入れてください。',true);return;}
   const sc=ui.tscope||'day';const d=ui.tdate||new Date();
-  await api('/api/tasks',{method:'POST',body:JSON.stringify({content:v,area:$('t-area').value,scope:sc,period:periodKey(sc,d)})});
-  setStatus('タスクを足しました。');await load();
+  await api('/api/tasks',{method:'POST',body:JSON.stringify({content:v,area:$('t-area').value,scope:sc,period:periodKey(sc,d),goal_id:ui.tgoal||null})});
+  setStatus(ui.tgoal?'タスクを足して、目的につなぎました。':'タスクを足しました。');await load();
+}
+
+// ---- 行動の画面（全画面・白と緑） ----
+function openAct(from){
+  const v=$('actview');if(ui.actOpen){renderActView();return;}
+  ui.actOpen=true;renderActView();
+  const r=from&&from.getBoundingClientRect();const x=r?r.left+r.width/2:innerWidth/2,y=r?r.top+r.height/2:innerHeight/2;
+  v.style.setProperty('--ox',x+'px');v.style.setProperty('--oy',y+'px');
+  v.hidden=false;document.body.classList.add('lock');requestAnimationFrame(()=>v.classList.add('open'));v.scrollTop=0;
+  try{history.pushState({act:1},'');}catch(_){}
+}
+function closeAct(fromPop){
+  const v=$('actview');if(!ui.actOpen)return;ui.actOpen=false;v.classList.remove('open');document.body.classList.remove('lock');
+  setTimeout(()=>{if(!ui.actOpen)v.hidden=true;},still.matches?0:320);
+  if(!fromPop){try{if(history.state&&history.state.act)history.back();}catch(_){}}
+  render();
+}
+window.addEventListener('popstate',()=>{if(ui.actOpen)closeAct(true);});
+function actGoalCard(g){
+  const d=g.milestones.filter(m=>m.done).length;const sel=ui.tgoal===g.id;
+  return `<div class="agc${sel?' sel':''}${g.area==='life'?' life':''}"><button type="button" class="agc-main" data-tgoal="${g.id}" aria-pressed="${sel}">
+    <span class="agc-top"><span class="agc-star" aria-hidden="true"></span>${g.area==='life'?'プライベート':'仕事'}${g.due?`・${esc(g.due.slice(5).replace('-','/'))}まで`:''}${g.stalled?`<span class="agc-stall">${g.idle_days}日動きなし</span>`:''}<b class="agc-pct">${g.progress}%</b></span>
+    <span class="agc-title">${esc(g.title)}</span>${gpathHTML(g)}
+    <span class="agc-now"><b>今ここ</b> ${g.milestones.length?`道のり ${d}/${g.milestones.length}・`:''}タスク ${g.tasks_done}/${g.tasks_total}</span></button>
+    <button type="button" class="agc-more" data-actgoal="${g.id}">詳しく ›</button></div>`;
+}
+function renderActView(){
+  const v=$('actview');const d=new Date();
+  const act=goalsAll().filter(g=>g.status==='active').slice().sort((a,b)=>(b.pinned-a.pinned)||String(a.due||'9999').localeCompare(String(b.due||'9999')));
+  const c=goalCands();
+  v.innerHTML=`<header class="av-top"><button type="button" class="av-back" data-actclose aria-label="脳に戻る">‹</button><span class="av-orb" aria-hidden="true"></span><h1>行動</h1><span class="av-date">${d.getMonth()+1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）</span></header>
+  <main class="av-body">
+    <section><div class="av-sh"><h2>目的</h2><button type="button" class="linkbtn" data-actgoals>すべて見る</button></div>
+      ${c.map(g=>`<div class="av-cand"><span aria-hidden="true">★</span><span><small>目的の候補</small><br><b>${esc(g.title)}</b></span><button type="button" data-gapprove="${g.id}">目的にする</button></div>`).join('')}
+      ${act.length?`<div class="av-goals">${act.map(actGoalCard).join('')}</div>`:`<p class="av-empty">進行中の目的はまだありません。やりたいことを記録すると、Claudeが候補を出します。</p>`}
+    </section>
+    <section><div class="av-sh"><h2>ToDo</h2></div><div id="av-tasks"></div></section>
+  </main>
+  <nav class="av-tab" aria-label="画面の切り替え"><button type="button" data-acttab="brain"><span></span>脳</button><button type="button" class="on" aria-current="page"><span></span>行動</button><button type="button" data-acttab="rec"><span></span>記録</button><button type="button" data-acttab="review"><span></span>見直し</button></nav>`;
+  renderTasks($('av-tasks'),{embedded:true});
+  const inp=$('t-new');if(inp)inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing)addTaskUI();});
 }
 
 function renderLayer(p){
-  if(ui.layer==='act'&&!ui.q)return renderTasks(p);
+  if(ui.layer==='act'&&!ui.q){ui.view='rec';openAct();return renderRec(p);}
   const l=allLayers().find(x=>x.id===ui.layer)||LAYERS[0];
   const inLayer=cats().filter(c=>T(c.key).layer===l.id);
   const info=(LAYER_INFO[l.id]||'自動で作られた層です')+(inLayer.length?`。自動で作ったカテゴリ：${inLayer.map(c=>c.label).join('、')}`:'');
@@ -993,7 +1096,7 @@ async function renderAccount(p){
   <div class="actions" style="justify-content:flex-start;margin-top:18px"><button class="ghost" id="logout">ログアウト</button></div>`;
 }
 const PANELS={rec:renderRec,layer:renderLayer,review:renderReview,core:renderCore,account:renderAccount,goals:renderGoals,goal:renderGoal};
-function render(){renderMap();(PANELS[ui.view]||renderRec)($('panel'));}
+function render(){renderMap();(PANELS[ui.view]||renderRec)($('panel'));if(ui.actOpen)renderActView();}
 
 // ---- 操作 ----
 const patch=(id,body)=>api('/api/units/'+id,{method:'PATCH',body:JSON.stringify(body)});
@@ -1019,6 +1122,12 @@ document.addEventListener('click',async e=>{
     if(t.dataset.gdrop){const k='gx'+t.dataset.gdrop;if(ui.armed!==k){ui.armed=k;render();return;}ui.armed=null;await api('/api/goals/'+t.dataset.gdrop,{method:'PATCH',body:JSON.stringify({status:'dropped'})});ui.view='goals';setStatus('目的を手放しました。');await load();return;}
     if(t.dataset.ms){const [gid,mid]=t.dataset.ms.split('|');await api(`/api/goals/${gid}/milestones/${mid}`,{method:'PATCH',body:JSON.stringify({done:t.checked})});await load();return;}
     if(t.dataset.msadd){const v=$('ms-new').value.trim();if(!v){setStatus('道のりの名前を入れてください。',true);return;}await api(`/api/goals/${t.dataset.msadd}/milestones`,{method:'POST',body:JSON.stringify({title:v})});await load();return;}
+    if(t.dataset.node==='act'){openAct(t);return;}
+    if(t.dataset.actclose!==undefined){closeAct();return;}
+    if(t.dataset.acttab){const to=t.dataset.acttab;if(to!=='brain')ui.view=to;closeAct();if(to!=='brain')$('panel').scrollIntoView({block:'start'});return;}
+    if(t.dataset.actgoals!==undefined){ui.view='goals';closeAct();$('panel').scrollIntoView({block:'start'});return;}
+    if(t.dataset.actgoal){ui.view='goal';ui.goal=Number(t.dataset.actgoal);closeAct();$('panel').scrollIntoView({block:'start'});return;}
+    if(t.dataset.tgoal){const id=Number(t.dataset.tgoal);ui.tgoal=ui.tgoal===id?null:id;render();return;}
     if(t.dataset.tscope){ui.tscope=t.dataset.tscope;render();return;}
     if(t.dataset.tarea){ui.tarea=t.dataset.tarea;render();return;}
     if(t.dataset.tshift!==undefined){const n=Number(t.dataset.tshift);ui.tdate=n===0?new Date():shiftDate(ui.tscope||'day',ui.tdate||new Date(),n);render();return;}
