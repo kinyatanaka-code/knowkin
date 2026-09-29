@@ -156,7 +156,7 @@ export async function goalContext(uid, goalId) {
   const [{ rows: linked }, { rows: knowledge }, { rows: core }, { rows: open }] = await Promise.all([
     pool.query(`SELECT id, type, content, reason, done, due FROM units WHERE user_id = $1 AND goal_id = $2 ORDER BY created_at`, [uid, goalId]),
     pool.query(`SELECT id, type, content, quote, reason, people, count FROM units
-      WHERE user_id = $1 AND type IN ('lesson','decision','value','input','person','idea','question')
+      WHERE user_id = $1 AND relevance = 'direct' AND type IN ('lesson','decision','value','input','person','idea','question')
       ORDER BY count DESC, importance DESC, created_at DESC LIMIT 60`, [uid]),
     pool.query('SELECT data FROM cores WHERE user_id = $1', [uid]),
     pool.query(`SELECT id, content, due FROM units WHERE user_id = $1 AND type IN ('task','goal') AND NOT done ORDER BY created_at DESC LIMIT 60`, [uid]),

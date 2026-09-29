@@ -4,7 +4,7 @@ import { addQuiz, quizMaterial, quizNeeded } from './growth.js';
 import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, setGoalNote } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
-  getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getGenres, getUnitsWithoutGenre, setGenres, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
+  getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getGenres, getUnitsForRelevance, setRelevance, getUnitsWithoutGenre, setGenres, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
 } from './brain.js';
 
 const text = (t) => ({ content: [{ type: 'text', text: t }] });
@@ -21,6 +21,7 @@ const unitSchema = z.object({
   same_as: z.number().int().nullable().optional().describe('既存の記憶と同じ内容ならそのid'),
   genre: z.string().max(20).optional().describe('引き出しの名前（テーマ）。既存の引き出し名があればそれを使う'),
   goal_id: z.number().int().nullable().optional().describe('この記憶が近づける目的のid（あれば）'),
+  relevance: z.enum(['direct', 'peripheral']).optional().describe('本人との関わり。direct=本人が当事者 / peripheral=周辺の情報（本人が関わっていない他人のやり取りなど）'),
   area: z.enum(['work', 'life']).optional().describe('task・goal のとき：work=仕事 / life=プライベート'),
   scope: z.enum(['year', 'month', 'week', 'day']).optional().describe('task・goal のとき：いつやるか（今年・今月・今週・今日）'),
   period: z.string().optional().describe('scope の期間（2026 / 2026-09 / 2026-W40 / 2026-09-28）。省略すると今の期間'),
@@ -45,6 +46,12 @@ async function categoriesPart(uid) {
 - 2〜8字程度の短い日本語にする。人物名は genre にせず people に入れる（関係の層は人物ごとに自動でまとまる）
 - 下の既存の引き出しに合うものがあれば、必ず同じ名前を使う。似た名前を増やさない
 - 既存の引き出し：${genres.length ? genres.map((g) => `${g.genre}（${g.n}）`).join('、') : '（まだありません）'}
+
+## 本人との関わり（relevance）
+- 本人（田中欽也）が当事者でない内容は relevance を peripheral にする。例：本人が送り手でも受け手でもなく、依頼も判断もしていない他の人同士のやり取り（ほかの部署の申請・承認、ほかの担当者の顧客対応、チャンネル上の他人の報告など）、一度名前が出ただけで本人と直接やり取りしていない人物
+- 本人が頼まれた・頼んだ・判断した・学んだ・関わる予定があるものは direct
+- 関わりがまったくなく、覚えておく価値もないものは、そもそも記憶にしない（units を空にしてよい）
+- task と goal は常に本人のものなので direct（他人のタスクは task にしない）
 
 ## タスクの分け方
 - task と goal には area（work=仕事 / life=プライベート）を必ず付ける
@@ -378,6 +385,27 @@ ${JSON.stringify(m.past)}`);
       })).min(1).max(5),
     },
   }, async ({ items }) => text(`${await addQuiz(uid, items)}問のテストを入れました。本人が「脳の成長」で採点します。`));
+
+  server.registerTool('get_units_for_relevance', {
+    title: '周辺情報の仕分けの材料',
+    description: 'ユーザーが「knowkinの周辺情報を仕分けて」「関係ない情報を分けて」と頼んだら呼ぶ。本人との関わりをまだ確かめていない記憶を返すので、本人が当事者か（direct）周辺の情報か（peripheral）を判断して set_relevance で保存すること。',
+    annotations: { readOnlyHint: true },
+  }, async () => {
+    const units = await getUnitsForRelevance(uid);
+    if (!units.length) return text('仕分けが必要な記憶はありません。');
+    return text(`次の記憶を、本人（田中欽也）との関わりで仕分けて set_relevance で保存してください。
+- direct：本人が送り手・受け手・依頼した/された・判断した・学んだ・今後関わる予定がある
+- peripheral：本人が関わっていない他の人同士のやり取り、ほかの部署の手続き、名前が一度出ただけで直接やり取りのない人物など
+- 迷うものは direct にする（本人に関係ある記憶を隠さないため）
+
+${JSON.stringify(units)}`);
+  });
+
+  server.registerTool('set_relevance', {
+    title: '周辺情報を仕分ける',
+    description: '記憶ごとに、本人が当事者（direct）か周辺の情報（peripheral）かを保存する。peripheral は核・再現度テスト・目的のタスクづくりの材料から外れ、画面では「周辺の情報」にまとまる。',
+    inputSchema: { items: z.array(z.object({ id: z.number().int(), relevance: z.enum(['direct', 'peripheral']) })).min(1).max(200) },
+  }, async ({ items }) => text(`${await setRelevance(uid, items)}件を仕分けました。`));
 
   server.registerTool('check_imported', {
     title: '取り込み済みか確認',

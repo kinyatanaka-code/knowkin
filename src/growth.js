@@ -7,7 +7,7 @@ const SCORE = { great: 1, ok: 0.5, miss: 0 };
 
 export async function getGrowth(uid) {
   const [{ rows: units }, { rows: cats }, { rows: quiz }] = await Promise.all([
-    pool.query(`SELECT type, reason, count, people, genre, area, created_at FROM units WHERE user_id = $1`, [uid]),
+    pool.query(`SELECT type, reason, count, people, genre, area, created_at FROM units WHERE user_id = $1 AND relevance = 'direct'`, [uid]),
     pool.query('SELECT key, layer, layer_label FROM categories WHERE user_id = $1', [uid]),
     pool.query(`SELECT id, question, prediction, basis, rating, correction, created_at, answered_at FROM brain_quiz WHERE user_id = $1 ORDER BY created_at DESC LIMIT 200`, [uid]),
   ]);
@@ -103,7 +103,7 @@ export async function quizMaterial(uid) {
   const [{ rows: core }, { rows: know }, { rows: past }] = await Promise.all([
     pool.query('SELECT data FROM cores WHERE user_id = $1', [uid]),
     pool.query(`SELECT id, type, content, quote, reason, people, count FROM units
-      WHERE user_id = $1 AND type IN ('lesson','decision','value','person','idea','question')
+      WHERE user_id = $1 AND relevance = 'direct' AND type IN ('lesson','decision','value','person','idea','question')
       ORDER BY random() LIMIT 50`, [uid]),
     pool.query(`SELECT question, rating, correction FROM brain_quiz WHERE user_id = $1 ORDER BY created_at DESC LIMIT 20`, [uid]),
   ]);

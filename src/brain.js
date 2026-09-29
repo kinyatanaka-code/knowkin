@@ -19,7 +19,7 @@ export const TYPES = {
   person: { label: '人物', layer: '関係' },
 };
 
-export const UNIT_COLS = `id, memo_id, type, genre, goal_id, area, scope, period, content, quote, reason, people, tags, due, importance, count,
+export const UNIT_COLS = `id, memo_id, type, genre, goal_id, area, scope, period, relevance, content, quote, reason, people, tags, due, importance, count,
   done, done_at, reviewed, created_at, to_char(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS day,
   (SELECT c.label FROM categories c WHERE c.user_id = units.user_id AND c.key = units.type) AS type_label`;
 export const LAYER_IDS = ['event', 'know', 'think', 'act', 'rel'];
@@ -162,6 +162,25 @@ export async function setGenres(uid, list) {
   let n = 0;
   for (const g of list) {
     const r = await pool.query('UPDATE units SET genre = $1 WHERE id = $2 AND user_id = $3', [String(g.genre || '').trim().slice(0, 20), g.id, uid]);
+    n += r.rowCount;
+  }
+  return n;
+}
+
+/** 自分との関わりをまだ確かめていない記憶（周辺情報の仕分け用） */
+export async function getUnitsForRelevance(uid, limit = 150) {
+  const { rows } = await pool.query(
+    `SELECT u.id, u.type, left(u.content, 160) AS content, u.people, m.source
+     FROM units u LEFT JOIN memos m ON m.id = u.memo_id
+     WHERE u.user_id = $1 AND NOT u.relevance_checked AND u.type NOT IN ('task','goal')
+     ORDER BY u.created_at DESC LIMIT $2`, [uid, limit]);
+  return rows;
+}
+export async function setRelevance(uid, items) {
+  let n = 0;
+  for (const it of items) {
+    const v = it.relevance === 'peripheral' ? 'peripheral' : 'direct';
+    const r = await pool.query(`UPDATE units SET relevance = $1, relevance_checked = TRUE WHERE id = $2 AND user_id = $3 AND type NOT IN ('task','goal')`, [v, it.id, uid]);
     n += r.rowCount;
   }
   return n;
@@ -356,11 +375,11 @@ async function applyUnits(memo, list) {
         if (hit.rowCount) { repeated++; continue; }
       }
       await client.query(
-        `INSERT INTO units(user_id, memo_id, type, content, quote, reason, people, tags, due, importance, dates, genre, goal_id, area, scope, period)
-         VALUES($11, $1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::date], $12, $13, $14, $15, $16)`,
+        `INSERT INTO units(user_id, memo_id, type, content, quote, reason, people, tags, due, importance, dates, genre, goal_id, area, scope, period, relevance, relevance_checked)
+         VALUES($11, $1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::date], $12, $13, $14, $15, $16, $17, TRUE)`,
         [memo.id, type, String(r.content), String(r.quote || ''), String(r.reason || ''),
           strArr(r.people), strArr(r.tags), validDate(r.due), imp(r.importance), today, memo.user_id, String(r.genre || '').trim().slice(0, 20), goalIds.has(Number(r.goal_id)) ? Number(r.goal_id) : null,
-          ...taskFields(type, r)],
+          ...taskFields(type, r), r.relevance === 'peripheral' && type !== 'task' && type !== 'goal' ? 'peripheral' : 'direct'],
       );
       added++;
       if (goalIds.has(Number(r.goal_id))) touched.add(Number(r.goal_id));
@@ -381,7 +400,7 @@ async function applyUnits(memo, list) {
 export async function getCoreMaterial(uid) {
   const { rows } = await pool.query(
     `SELECT type, content, quote, reason, people, count, importance FROM units
-     WHERE user_id = $2 AND (type = ANY($1) OR type NOT IN ('event', 'input', 'task'))
+     WHERE user_id = $2 AND relevance = 'direct' AND (type = ANY($1) OR type NOT IN ('event', 'input', 'task'))
        AND type NOT IN ('event', 'input', 'task') ORDER BY count DESC, importance DESC, created_at DESC LIMIT 300`,
     [['lesson', 'value', 'decision', 'person', 'goal', 'question', 'idea'], uid],
   );
@@ -490,6 +509,7 @@ export async function updateUnit(uid, id, fields) {
     if (gid !== null && !(await pool.query('SELECT 1 FROM goals WHERE id = $1 AND user_id = $2', [gid, uid])).rows[0]) throw new Error('目的が見つかりません');
     params.push(gid); sets.push(`goal_id = $${params.length}`);
   }
+  if (fields.relevance === 'direct' || fields.relevance === 'peripheral') { params.push(fields.relevance); sets.push(`relevance = $${params.length}, relevance_checked = TRUE`); }
   if (fields.area === 'work' || fields.area === 'life') { params.push(fields.area); sets.push(`area = $${params.length}`); }
   if (fields.scope !== undefined) {
     const sc = SCOPES.includes(fields.scope) ? fields.scope : '';

@@ -221,6 +221,8 @@ button{cursor:pointer}
 .drawer-name{font-weight:700;font-size:16px;overflow-wrap:anywhere}
 .drawer-n{font-size:13px;color:var(--c);font-weight:700;white-space:nowrap}
 .drawer-prev{font-size:13px;color:var(--muted);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+.drawer.peri{opacity:.75;border-style:dashed}
+.relbtn{font-size:12px;font-weight:500;margin-left:auto}
 .back{background:none;border:0;color:var(--cyan);padding:4px 0;margin:4px 0 8px;font-weight:700}
 .drawer-head{display:flex;align-items:baseline;gap:10px;border-left:3px solid var(--c);padding-left:10px;margin:0 0 4px}
 .drawer-head h3{margin:0;font-size:19px}.drawer-head span{color:var(--muted);font-size:13px}
@@ -505,8 +507,9 @@ function mapNodes(){
   const extra=allLayers().filter(l=>l.custom).slice(0,EXTRA_SLOTS.length).map((l,i)=>({...EXTRA_SLOTS[i],id:l.id,label:l.label,custom:true}));
   return [...base,...extra];
 }
+const isPeri=u=>u.relevance==='peripheral';
 function renderMap(){
-  const units=state.units||[];
+  const units=(state.units||[]).filter(u=>!isPeri(u));
   const cnt=id=>units.filter(u=>layerOf(u)===id).length;
   const openTasks=units.filter(u=>(u.type==='task'||u.type==='goal')&&!u.done).length;
   const label=id=>id==='act'&&openTasks?`のこり${openTasks}`:(cnt(id)?cnt(id)+'件':'');
@@ -556,7 +559,7 @@ function layoutNet(){
   // 記憶の星：各層のまわりに1件1つ
   const scale=Math.min(net.w,net.h);
   net.stars=[];const per={};
-  for(const u of state.units||[]){const l=layerOf(u);per[l]=(per[l]||0)+1;if(per[l]>45)continue;
+  for(const u of state.units||[]){if(isPeri(u))continue;const l=layerOf(u);per[l]=(per[l]||0)+1;if(per[l]>45)continue;
     net.stars.push({layer:l,a:hash(u.id,1)*Math.PI*2,rad:scale*(.07+hash(u.id,2)*.09),size:1.6+(u.importance||2)*.6+Math.min(u.count||1,4)*.4,spd:(hash(u.id,3)-.5)*.004,done:u.done});}
   if(still.matches)drawNet();else loopNet();
 }
@@ -854,7 +857,7 @@ function setupMic(){
 }
 
 // ---- 一覧系 ----
-function unitHTML(u,{review=false,showLayer=false}={}){
+function unitHTML(u,{review=false,showLayer=false,relToggle=false}={}){
   const t=T(u.type);const meta=[];
   if(u.due)meta.push(`期限 ${esc(u.due)}`);
   if((u.people||[]).length)meta.push(esc(u.people.join('、')));
@@ -868,22 +871,25 @@ function unitHTML(u,{review=false,showLayer=false}={}){
   return `<li class="item${u.done?' done':''}">${isTask&&!review?`<input type="checkbox" class="check" data-done="${u.id}" ${u.done?'checked':''} aria-label="完了にする">`:''}
     <div class="body"><div class="type" style="color:${lcol(t.layer)}">${esc(t.label)}${t.custom?'<span class="newtag">自動</span>':''}${u.genre&&!showLayer?`<span class="newtag">${esc(u.genre)}</span>`:''}${u.goal_id&&ui.view!=='goal'?(()=>{const g=goalsAll().find(x=>x.id===u.goal_id);return g?`<span class="goaltag">★ ${esc(g.title)}</span>`:'';})():''}</div><p class="content">${esc(u.content)}</p>
     ${u.quote?`<p class="quote">「${esc(u.quote)}」</p>`:''}${u.reason?`<p class="quote">理由：${esc(u.reason)}</p>`:''}
-    <div class="meta">${meta.map(m=>`<span>${m}</span>`).join('')}</div>${actions}</div></li>`;
+    <div class="meta">${meta.map(m=>`<span>${m}</span>`).join('')}${(relToggle||review)&&!isTask?`<button type="button" class="linkbtn relbtn" data-rel="${u.id}|${isPeri(u)?'direct':'peripheral'}">${isPeri(u)?'自分に関係ある':'周辺の情報にする'}</button>`:''}</div>${actions}</div></li>`;
 }
 // ---- 引き出し：層の中をテーマ（関係は人物）ごとに分ける ----
 const cleanTag=t=>String(t||'').replace(/^#/,'').trim();
 function drawersFor(layerId){
-  const all=state.units||[];
+  const every=state.units||[];const all=every.filter(u=>!isPeri(u));
+  const periDrawer=list=>list.length?[{key:'peri',label:'周辺の情報',units:list.slice().sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))),last:true,peri:true}]:[];
   if(layerId==='rel'){
     const map=new Map();
     for(const u of all)for(const n of (u.people||[])){const k=String(n).trim();if(!k)continue;if(!map.has(k))map.set(k,[]);map.get(k).push(u);}
+    const periRel=every.filter(u=>isPeri(u)&&(layerOf(u)==='rel'||(u.people||[]).length));
     const ds=[...map].map(([name,us])=>({key:'p:'+name,label:name,person:true,
       units:us.slice().sort((a,b)=>(layerOf(b)==='rel')-(layerOf(a)==='rel')||String(b.created_at).localeCompare(String(a.created_at)))}));
     const orphan=all.filter(u=>layerOf(u)==='rel'&&!(u.people||[]).length);
     if(orphan.length)ds.push({key:'p:',label:'名前なし',units:orphan});
-    return ds.sort((a,b)=>b.units.length-a.units.length);
+    return [...ds.sort((a,b)=>b.units.length-a.units.length),...periDrawer(periRel).map(d=>({...d,label:'周辺の人'}))];
   }
   let list=all.filter(u=>layerOf(u)===layerId);
+  const periList=every.filter(u=>isPeri(u)&&layerOf(u)===layerId);
   const ds=new Map();const add=(key,label,u)=>{if(!ds.has(key))ds.set(key,{key,label,units:[]});ds.get(key).units.push(u);};
   if(layerId==='act'){const done=list.filter(u=>u.done);list=list.filter(u=>!u.done);if(done.length)ds.set('done',{key:'done',label:'終わったもの',units:done,last:true});}
   if(layerId==='think'){for(const u of list)add('t:'+u.type,T(u.type).label,u);}
@@ -900,7 +906,7 @@ function drawersFor(layerId){
     if(layerId==='act'&&!d.last)d.units.sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));
     else d.units.sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
   }
-  return arr.sort((a,b)=>(a.last?1:0)-(b.last?1:0)||(a.label==='その他')-(b.label==='その他')||b.units.length-a.units.length);
+  return [...arr.sort((a,b)=>(a.last?1:0)-(b.last?1:0)||(a.label==='その他')-(b.label==='その他')||b.units.length-a.units.length),...periDrawer(periList)];
 }
 function drawerPreview(d){
   const u=d.person?(d.units.find(x=>layerOf(x)==='rel')||d.units[0]):d.units[0];
@@ -1046,11 +1052,12 @@ function renderMemList(){
   const open=ui.drawer&&ds.find(d=>d.key===ui.drawer);
   if(open){
     box.innerHTML=`<button class="back" type="button" data-drawer="">← 引き出し一覧</button>
-      <div class="drawer-head" style="--c:${col}"><h3>${esc(open.label)}</h3><span>${open.units.length}件</span></div>
-      <ul class="list">${open.units.slice(0,300).map(u=>unitHTML(u,{showLayer:lid==='rel'})).join('')}</ul>`;
+      <div class="drawer-head" style="--c:${open.peri?'var(--muted)':col}"><h3>${esc(open.label)}</h3><span>${open.units.length}件</span></div>
+      ${open.peri?'<p class="hint" style="margin:0 0 6px">自分が当事者ではない、周りのやり取りなどです。核や再現度テスト、目的のタスクづくりには使いません。</p>':''}
+      <ul class="list">${open.units.slice(0,300).map(u=>unitHTML(u,{showLayer:lid==='rel',relToggle:true})).join('')}</ul>`;
     return;
   }
-  box.innerHTML=`<div class="drawers">${ds.map(d=>`<button type="button" class="drawer" data-drawer="${esc(d.key)}" style="--c:${col}">
+  box.innerHTML=`<div class="drawers">${ds.map(d=>`<button type="button" class="drawer${d.peri?' peri':''}" data-drawer="${esc(d.key)}" style="--c:${d.peri?'var(--muted)':col}">
       <span class="drawer-top"><span class="drawer-name">${esc(d.label)}</span><span class="drawer-n">${d.units.length}</span></span>
       <span class="drawer-prev">${esc(drawerPreview(d))}</span></button>`).join('')}</div>`;
 }
@@ -1171,6 +1178,7 @@ document.addEventListener('click',async e=>{
     if(t.dataset.copy){const i=$(t.dataset.copy);i.select();try{await navigator.clipboard.writeText(i.value);t.textContent='コピーしました';setTimeout(()=>{t.textContent='コピー';},1500);}catch(_){}return;}
     if(t.id==='pwBtn'){try{await api('/api/account/password',{method:'POST',body:JSON.stringify({current:$('pw-cur').value,next:$('pw-new').value})});authMode='login';showLogin('パスワードを変えました。新しいパスワードでログインしてください。');}catch(err){setStatus(err.message,true);}return;}
     if(t.dataset.goal){if((recorder&&recorder.state==='recording')||live||prog){setStatus('録音・アップロードの処理中です。',true);return;}ui.view='goal';ui.goal=Number(t.dataset.goal);ui.armed=null;setStatus('');render();$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
+    if(t.dataset.rel){const [id,v]=t.dataset.rel.split('|');const u=localUnit(id);u.relevance=v;render();await patch(u.id,{relevance:v});setStatus(v==='peripheral'?'周辺の情報に移しました。':'自分に関係ある記憶に戻しました。');return;}
     if(t.dataset.qrate){const [id,rt]=t.dataset.qrate.split('|');if(rt==='great'){await api(`/api/quiz/${id}/rate`,{method:'POST',body:JSON.stringify({rating:rt})});ui.growth=null;setStatus('採点しました。');render();return;}ui.quizPending={id:Number(id),rating:rt};render();$('qfix').focus();return;}
     if(t.dataset.qcancel!==undefined){ui.quizPending=null;render();return;}
     if(t.dataset.qsend){const pnd=ui.quizPending;const fix=$('qfix').value.trim();if(pnd.rating==='miss'&&!fix){setStatus('本当の考えを一言書いてください。それがknowkinの新しい記憶になります。',true);return;}
