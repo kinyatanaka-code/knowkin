@@ -159,6 +159,21 @@ button{cursor:pointer}
 .av-tab button{display:flex;flex-direction:column;align-items:center;gap:3px;background:none;border:0;font-size:11px;color:var(--muted);min-width:64px}
 .av-tab button span{width:8px;height:8px;border-radius:50%;background:currentColor}
 .av-tab .on{color:var(--g);font-weight:700}
+.gr-hero{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px 18px}
+.gr-lbl{margin:0;font-size:13px;color:var(--muted)}
+.gr-big{margin:2px 0;font-size:44px;font-weight:800;line-height:1.1;color:#6FCF97}.gr-big small{font-size:20px;margin-left:2px}
+.gr-sub{margin:0;font-size:12px;color:var(--muted)}
+.spark{width:140px;height:36px;flex:none}
+.gr-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px;margin-top:22px}
+.gr-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:12px 14px;display:flex;flex-direction:column;gap:3px}
+.gr-num{margin:0;font-size:28px;font-weight:800}.gr-num small{font-size:14px;margin-left:2px;color:var(--muted)}
+.lbar{display:flex;align-items:center;gap:6px;font-size:12px}.lbar-n{width:3.5em;color:var(--muted)}.lbar-t{flex:1;height:6px;border-radius:999px;background:var(--surface2);overflow:hidden}.lbar-t span{display:block;height:100%;border-radius:999px}.lbar-c{width:2em;text-align:right}
+.gr-hints{margin:0;padding-left:1.2em;color:var(--ink)}.gr-hints li{margin:4px 0}
+.quiz{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;margin:0 0 12px}
+.quiz .q{margin:0;font-weight:700}
+.quiz .pred{margin:8px 0 0;padding:8px 12px;border-left:3px solid var(--violet);background:var(--bg2);border-radius:0 8px 8px 0}.quiz .pred span{display:block;font-size:12px;color:var(--muted)}
+.quiz .basis{margin:6px 0 0;font-size:12px;color:var(--muted)}
+.qbtns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}.qbtns button{flex:1;min-width:90px;border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:8px 6px;font-weight:700}
 .magnets{display:flex;gap:10px;justify-content:flex-end;margin:12px 2px 0;flex-wrap:wrap}
 .magnet{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 16px;font-size:14px;display:flex;gap:8px;align-items:center}
 .magnet::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
@@ -508,6 +523,7 @@ function renderMap(){
   $('magnets').innerHTML=`<button type="button" class="magnet" data-view="review" aria-pressed="${ui.view==='review'}">見直し${review?`<span class="n">${review}</span>`:''}</button>
     <button type="button" class="magnet" data-view="goals" aria-pressed="${ui.view==='goals'||ui.view==='goal'}">目的${goalCands().length?`<span class="n">${goalCands().length}</span>`:''}</button>
     <button type="button" class="magnet" data-view="core" aria-pressed="${ui.view==='core'}">核${state.core?'':'<span class="n">まだ</span>'}</button>
+    <button type="button" class="magnet" data-view="growth" aria-pressed="${ui.view==='growth'}">脳の成長</button>
     <button type="button" class="magnet" data-view="account" aria-pressed="${ui.view==='account'}">${esc((state.user&&state.user.name)||'アカウント')}</button>`;
   const d=new Date();$('today').textContent=`${d.getMonth()+1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）`;
 }
@@ -1101,7 +1117,42 @@ async function renderAccount(p){
   </div>
   <div class="actions" style="justify-content:flex-start;margin-top:18px"><button class="ghost" id="logout">ログアウト</button></div>`;
 }
-const PANELS={rec:renderRec,layer:renderLayer,review:renderReview,core:renderCore,account:renderAccount,goals:renderGoals,goal:renderGoal};
+// ---- 脳の成長 ----
+function spark(vals,col){
+  const w=140,hgt=36,pts=vals.map((v,i)=>v==null?null:[i*(w/(vals.length-1)),v]);const nums=vals.filter(v=>v!=null);
+  if(nums.length<1)return `<svg class="spark" viewBox="0 0 ${w} ${hgt}" aria-hidden="true"></svg>`;
+  const mx=Math.max(...nums),mn=Math.min(0,...nums);const y=v=>hgt-4-((v-mn)/((mx-mn)||1))*(hgt-8);
+  const d=pts.filter(Boolean).map((p,i)=>`${i?'L':'M'}${p[0].toFixed(1)} ${y(p[1]).toFixed(1)}`).join(' ');
+  const last=pts.filter(Boolean).pop();
+  return `<svg class="spark" viewBox="0 0 ${w} ${hgt}" aria-hidden="true"><path d="${d}" fill="none" stroke="${col}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="${last[0]}" cy="${y(last[1])}" r="3" fill="${col}"/></svg>`;
+}
+async function renderGrowth(p){
+  if(!ui.growth){p.innerHTML=`<h2>脳の成長</h2><p class="lead">読み込んでいます…</p>`;
+    try{ui.growth=await api('/api/growth');}catch(e){if(e.message!=='unauthorized')p.innerHTML=`<h2>脳の成長</h2><p class="status err">${esc(e.message)}</p>`;return;}
+    if(ui.view!=='growth')return;}
+  const g=ui.growth;const r=g.repro;const L=allLayers();const maxL=Math.max(1,...L.map(l=>g.layers[l.id]||0));
+  const wk=g.weeks.map(w=>w.total);const grew=wk.length>1?wk[wk.length-1]-wk[0]:0;
+  const pend=ui.quizPending;
+  p.innerHTML=`<h2>脳の成長</h2><p class="lead">knowkinがどれだけあなたの脳に近づいているかを、量・深さ・広さ・再現度の4つで見ます。</p>
+  <div class="gr-hero"><div><p class="gr-lbl">今月の再現度</p><p class="gr-big">${r.month==null?'—':r.month+'<small>%</small>'}</p>
+    <p class="gr-sub">${r.month==null?'今月はまだテストに答えていません':`${r.month_count}問に答えた結果`}${r.all!=null?`　これまで全体 ${r.all}%（${r.all_count}問）`:''}</p></div>${spark(r.weeks,'#6FCF97')}</div>
+
+  <h4>再現度テスト</h4>
+  ${g.quiz_open.length?g.quiz_open.map(q=>`<div class="quiz"><p class="q">Q. ${esc(q.question)}</p><p class="pred"><span>Claudeの予想</span>${esc(q.prediction)}</p>${q.basis?`<p class="basis">根拠：${esc(q.basis)}</p>`:''}
+    ${pend&&pend.id===q.id?`<label class="field" style="margin:10px 0 8px"><span>${pend.rating==='miss'?'本当はどう考えますか？':'補足があれば（任意）'}</span><textarea id="qfix" class="vtext" style="min-height:80px"></textarea></label><div class="actions" style="justify-content:flex-start"><button class="primary" data-qsend="${q.id}">送る</button><button class="ghost" data-qcancel>やめる</button></div>`
+    :`<div class="qbtns"><button data-qrate="${q.id}|great">◎ そのとおり</button><button data-qrate="${q.id}|ok">○ だいたい</button><button data-qrate="${q.id}|miss">△ 違う</button></div>`}</div>`).join('')
+    :`<p class="hint" style="margin:0 0 10px">今答えられるテストはありません。週に1回、整理のときにClaudeが3問作ります。</p><div class="actions" style="justify-content:flex-start"><button class="ghost" id="qreq">今週のテストを作ってもらう</button></div>`}
+
+  <div class="gr-grid">
+    <div class="gr-card"><p class="gr-lbl">量</p><p class="gr-num">${g.total}<small>件</small></p><p class="gr-sub">この1週間 +${g.last7}　8週間で +${grew}</p>${spark(wk,'#5CD2FF')}</div>
+    <div class="gr-card"><p class="gr-lbl">深さ</p><p class="gr-num">${g.depth.rooted}<small>個</small></p><p class="gr-sub">定着した考え（2回以上出てきた教訓・価値観・判断）</p><p class="gr-sub">理由つきの判断 ${g.depth.decisions_with_reason} / ${g.depth.decisions}</p></div>
+    <div class="gr-card"><p class="gr-lbl">広さ</p><p class="gr-num">${g.breadth.people}<small>人</small></p><p class="gr-sub">関わる人　引き出し ${g.breadth.genres}個</p><p class="gr-sub">タスク 仕事 ${g.breadth.work}・プライベート ${g.breadth.life}</p></div>
+    <div class="gr-card"><p class="gr-lbl">層のバランス</p>${L.map(l=>`<div class="lbar"><span class="lbar-n">${esc(l.label)}</span><span class="lbar-t"><span style="width:${((g.layers[l.id]||0)/maxL*100).toFixed(0)}%;background:${lcol(l.id)}"></span></span><span class="lbar-c">${g.layers[l.id]||0}</span></div>`).join('')}</div>
+  </div>
+  ${g.hints.length?`<h4>次に伸ばすには</h4><ul class="gr-hints">${g.hints.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
+  ${g.quiz_recent.length?`<details><summary>最近のテストの結果</summary><ul class="list">${g.quiz_recent.map(q=>`<li class="item"><div class="body"><div class="type" style="color:${q.rating==='great'?'#6FCF97':q.rating==='ok'?'#DDB262':'#FF7A9A'}">${q.rating==='great'?'◎ そのとおり':q.rating==='ok'?'○ だいたい':'△ 違う'}</div><p class="content">${esc(q.question)}</p><p class="quote">予想：${esc(q.prediction)}</p>${q.correction?`<p class="quote">あなたの答え：${esc(q.correction)}</p>`:''}</div></li>`).join('')}</ul></details>`:''}`;
+}
+const PANELS={rec:renderRec,layer:renderLayer,review:renderReview,core:renderCore,account:renderAccount,goals:renderGoals,goal:renderGoal,growth:renderGrowth};
 function render(){renderMap();(PANELS[ui.view]||renderRec)($('panel'));if(ui.actOpen)renderActView();}
 
 // ---- 操作 ----
@@ -1120,6 +1171,11 @@ document.addEventListener('click',async e=>{
     if(t.dataset.copy){const i=$(t.dataset.copy);i.select();try{await navigator.clipboard.writeText(i.value);t.textContent='コピーしました';setTimeout(()=>{t.textContent='コピー';},1500);}catch(_){}return;}
     if(t.id==='pwBtn'){try{await api('/api/account/password',{method:'POST',body:JSON.stringify({current:$('pw-cur').value,next:$('pw-new').value})});authMode='login';showLogin('パスワードを変えました。新しいパスワードでログインしてください。');}catch(err){setStatus(err.message,true);}return;}
     if(t.dataset.goal){if((recorder&&recorder.state==='recording')||live||prog){setStatus('録音・アップロードの処理中です。',true);return;}ui.view='goal';ui.goal=Number(t.dataset.goal);ui.armed=null;setStatus('');render();$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
+    if(t.dataset.qrate){const [id,rt]=t.dataset.qrate.split('|');if(rt==='great'){await api(`/api/quiz/${id}/rate`,{method:'POST',body:JSON.stringify({rating:rt})});ui.growth=null;setStatus('採点しました。');render();return;}ui.quizPending={id:Number(id),rating:rt};render();$('qfix').focus();return;}
+    if(t.dataset.qcancel!==undefined){ui.quizPending=null;render();return;}
+    if(t.dataset.qsend){const pnd=ui.quizPending;const fix=$('qfix').value.trim();if(pnd.rating==='miss'&&!fix){setStatus('本当の考えを一言書いてください。それがknowkinの新しい記憶になります。',true);return;}
+      await api(`/api/quiz/${t.dataset.qsend}/rate`,{method:'POST',body:JSON.stringify({rating:pnd.rating,correction:fix})});ui.quizPending=null;ui.growth=null;setStatus(fix?'採点しました。あなたの答えは新しい記録として残し、次の整理で記憶になります。':'採点しました。');render();return;}
+    if(t.id==='qreq'){await api('/api/quiz/request',{method:'POST'});setStatus('依頼しました。次の整理のときにClaudeがテストを作ります。すぐ作るなら会話で「knowkinの再現度テストを作って」と頼んでください。');return;}
     if(t.dataset.greqtasks){await api(`/api/goals/${t.dataset.greqtasks}/request-tasks`,{method:'POST'});setStatus('依頼しました。次の整理のときにClaudeがタスクを作ります。すぐ作るなら会話で「knowkinの目的からタスクを作って」と頼んでください。');await load();return;}
     if(t.dataset.gapprove){await api('/api/goals/'+t.dataset.gapprove,{method:'PATCH',body:JSON.stringify({status:'active'})});setStatus('目的にしました。ネットワークに星として現れます。');await load();return;}
     if(t.dataset.greject){const k='gr'+t.dataset.greject;if(ui.armed!==k){ui.armed=k;render();return;}ui.armed=null;await api('/api/goals/'+t.dataset.greject,{method:'PATCH',body:JSON.stringify({status:'dropped'})});setStatus('候補を見送りました。');await load();return;}
@@ -1145,7 +1201,7 @@ document.addEventListener('click',async e=>{
       if((recorder&&recorder.state==='recording')||live){setStatus('録音中です。止めてから切り替えてください。',true);return;}
       if(prog){setStatus('アップロードの処理中です。終わるまでこのままお待ちください。',true);return;}
       if(t.dataset.node){if(ui.layer!==t.dataset.node){ui.q='';ui.drawer=null;}ui.view='layer';ui.layer=t.dataset.node;}else ui.view=t.dataset.view;
-      ui.armed=null;if(ui.view!=='rec')ui.result=null;setStatus('');render();
+      ui.armed=null;if(ui.view!=='rec')ui.result=null;if(ui.view==='growth')ui.growth=null;setStatus('');render();
       if(window.innerWidth<700)$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.id==='recbtn'){if(state.canSummarizeAudio||state.canTranscribe)toggleRecord();else toggleLive();return;}
     if(t.id==='vsave'){saveVoiceText();return;}

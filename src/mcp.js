@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { addQuiz, quizMaterial, quizNeeded } from './growth.js';
 import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, setGoalNote } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
@@ -156,8 +157,9 @@ export function buildMcpServer(uid) {
     const memos = await getUnclassified(uid, 20);
     const photos = await getUnclassifiedPhotos(uid, 4);
     const reqs = await pendingTaskRequests(uid);
-    const reqPart = reqs.length ? `\n\n## タスクづくりを頼まれている目的\n次の目的について、get_goal_context で材料を読み、これまでの知識をもとにタスクを作って add_goal_tasks で入れてください：${reqs.map((r) => `id ${r.id}「${r.title}」`).join('、')}` : '';
-    if (!memos.length && !photos.length) return text(reqs.length ? `未整理のメモはありません。${reqPart}` : '未整理のメモはありません。');
+    const quizPart = (await quizNeeded(uid)) ? '\n\n## 再現度テストを作ってください\nget_quiz_material で材料を読み、「本人ならどう答えるか」を予想するテストを3問作って add_quiz で入れてください。' : '';
+    const reqPart = quizPart + (reqs.length ? `\n\n## タスクづくりを頼まれている目的\n次の目的について、get_goal_context で材料を読み、これまでの知識をもとにタスクを作って add_goal_tasks で入れてください：${reqs.map((r) => `id ${r.id}「${r.title}」`).join('、')}` : '');
+    if (!memos.length && !photos.length) return text(reqPart ? `未整理のメモはありません。${reqPart}` : '未整理のメモはありません。');
     const existing = await getDedupList(uid);
     const photoPart = photos.length ? `
 
@@ -339,6 +341,43 @@ ${JSON.stringify(c.open)}`);
     try { return text(`${await addGoalTasks(uid, gid, tasks)}件のタスクを「提案」として入れました。本人が見直しで確認します。`); }
     catch (e) { return text(`入れられませんでした：${e.message}`); }
   });
+
+  server.registerTool('get_quiz_material', {
+    title: '再現度テストの材料',
+    description: 'ユーザーが「knowkinの再現度テストを作って」と頼んだとき、または整理のときにテストづくりを頼まれたときに呼ぶ。本人の核と記憶の一部、過去のテストの結果を返す。',
+    annotations: { readOnlyHint: true },
+  }, async () => {
+    const m = await quizMaterial(uid);
+    return text(`本人が実際に出会いそうな場面について「本人ならどう判断・行動するか」を問う質問を3問作り、記録をもとに本人の答えを予想してください。
+
+## 作り方
+- 質問は具体的な場面にする（例：「インターンが当日に休みたいと連絡してきた。どう返す？」「決裁者が別にいる商談で、担当者が前向き。次の一手は？」）。仕事とプライベートを混ぜてよい
+- 予想は、本人の口調に近い1〜3文で。一般論ではなく、記録に書かれた価値観・判断・教訓に沿わせる
+- basis に、予想の根拠にした記憶を短く書く
+- 過去のテストと同じ質問は出さない。過去に「違う（miss）」だった分野は、本人の答え（correction）を踏まえてもう一度確かめてよい
+- 記録からは予想できないことは質問にしない
+
+## 本人の核
+${JSON.stringify(m.core)}
+
+## 記憶（ランダムに50件）
+${JSON.stringify(m.knowledge)}
+
+## 過去のテスト
+${JSON.stringify(m.past)}`);
+  });
+
+  server.registerTool('add_quiz', {
+    title: '再現度テストを入れる',
+    description: 'get_quiz_material をもとに作った再現度テスト（質問・予想・根拠）を入れる。本人がknowkinの「脳の成長」で採点する。',
+    inputSchema: {
+      items: z.array(z.object({
+        question: z.string().describe('具体的な場面の質問'),
+        prediction: z.string().describe('本人ならこう答える、という予想（1〜3文）'),
+        basis: z.string().optional().describe('予想の根拠にした記憶'),
+      })).min(1).max(5),
+    },
+  }, async ({ items }) => text(`${await addQuiz(uid, items)}問のテストを入れました。本人が「脳の成長」で採点します。`));
 
   server.registerTool('check_imported', {
     title: '取り込み済みか確認',

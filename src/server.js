@@ -15,6 +15,7 @@ import {
   rotateLinkToken, signupState, tooManyAttempts, userFromLinkToken, userFromSession,
 } from './auth.js';
 import { buildMcpServer } from './mcp.js';
+import { getGrowth, rateQuiz, requestQuiz } from './growth.js';
 import { addMilestone, requestTasks, setMilestone, snapshotGoals, updateGoal } from './goals.js';
 import { authUrl, googleEnabled, googleStatus, handleCallback, syncAll, syncUser, unlink } from './google.js';
 import { baseUrl, mcpUnauthorized, oauthRouter, revokeAllTokens, userIdFromAccessToken } from './oauth.js';
@@ -165,6 +166,12 @@ api.get('/photos/:id', wrap(async (req, res) => {
   const p = await getPhoto(req.uid, Number(req.params.id));
   if (!p) return res.status(404).end();
   res.set({ 'Content-Type': p.mime, 'Cache-Control': 'private, max-age=86400' }).send(Buffer.from(p.data));
+}));
+api.get('/growth', wrap(async (req, res) => res.json(await getGrowth(req.uid))));
+api.post('/quiz/request', wrap(async (req, res) => { await requestQuiz(req.uid); res.json({ ok: true }); }));
+api.post('/quiz/:id/rate', wrap(async (req, res) => {
+  try { await rateQuiz(req.uid, Number(req.params.id), String(req.body?.rating || ''), req.body?.correction); res.json({ ok: true }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
 }));
 api.post('/tasks', wrap(async (req, res) => {
   try { res.json(await addTask(req.uid, req.body || {})); } catch (e) { res.status(400).json({ error: e.message }); }

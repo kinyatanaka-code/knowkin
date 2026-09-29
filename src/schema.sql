@@ -170,3 +170,17 @@ ALTER TABLE units ADD COLUMN IF NOT EXISTS period TEXT NOT NULL DEFAULT '';   --
 
 -- 目的からタスクを作ってほしいという依頼
 ALTER TABLE goals ADD COLUMN IF NOT EXISTS task_request_at TIMESTAMPTZ;
+
+-- 脳の再現度テスト：Claudeが「あなたならこう答える」と予想し、本人が採点する
+CREATE TABLE IF NOT EXISTS brain_quiz (
+  id           SERIAL PRIMARY KEY,
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  question     TEXT NOT NULL,
+  prediction   TEXT NOT NULL,
+  basis        TEXT NOT NULL DEFAULT '',
+  rating       TEXT,                                   -- great / ok / miss
+  correction   TEXT NOT NULL DEFAULT '',
+  created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+  answered_at  TIMESTAMPTZ
+);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS quiz_request_at TIMESTAMPTZ;
