@@ -8,7 +8,7 @@ import { migrate } from './db.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
-  addMemo, addPhoto, addTask, addVoice, classifyMemoById, getPhoto, mergeCategory, updateCategory, deleteUnit, getState, growCore, growCoresIfChanged, updateUnit, coreText, getCore, getOpenTasks,
+  addMemo, addPhoto, addTask, addVoice, requestCore, classifyMemoById, getPhoto, mergeCategory, updateCategory, deleteUnit, getState, growCore, growCoresIfChanged, updateUnit, coreText, getCore, getOpenTasks,
 } from './brain.js';
 import {
   changePassword, clearFailures, createSession, createUser, destroySession, firstUser, getLinkToken, login, noteFailure,
@@ -169,6 +169,7 @@ api.get('/photos/:id', wrap(async (req, res) => {
 }));
 api.get('/growth', wrap(async (req, res) => res.json(await getGrowth(req.uid))));
 api.post('/quiz/request', wrap(async (req, res) => { await requestQuiz(req.uid); res.json({ ok: true }); }));
+api.post('/core/request', wrap(async (req, res) => { await requestCore(req.uid); res.json({ ok: true }); }));
 api.post('/quiz/:id/rate', wrap(async (req, res) => {
   try { await rateQuiz(req.uid, Number(req.params.id), String(req.body?.rating || ''), req.body?.correction); res.json({ ok: true }); }
   catch (e) { res.status(400).json({ error: e.message }); }

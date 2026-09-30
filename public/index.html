@@ -174,6 +174,15 @@ button{cursor:pointer}
 .quiz .pred{margin:8px 0 0;padding:8px 12px;border-left:3px solid var(--violet);background:var(--bg2);border-radius:0 8px 8px 0}.quiz .pred span{display:block;font-size:12px;color:var(--muted)}
 .quiz .basis{margin:6px 0 0;font-size:12px;color:var(--muted)}
 .qbtns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}.qbtns button{flex:1;min-width:90px;border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:8px 6px;font-weight:700}
+.ask-stat{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted);margin:0 0 14px}.ask-stat b{color:var(--ink);font-size:15px;margin-right:2px}
+.ask{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:4px}
+.ask.main{border-color:var(--cyan);margin-bottom:14px;background:linear-gradient(135deg,rgba(92,210,255,.12),rgba(176,124,255,.10)),var(--surface)}
+.ask-t{margin:0;font-weight:700;font-size:16px}.ask-d{margin:0;font-size:13px;color:var(--muted)}.ask-q{margin:2px 0 6px;font-size:12px;color:var(--cyan)}
+.ask-b{display:flex;gap:8px;flex-wrap:wrap;margin-top:auto}.ask-b .primary{text-decoration:none;display:inline-block}
+.asks{display:grid;grid-template-columns:repeat(auto-fill,minmax(155px,1fr));gap:10px}
+.asks .ask{padding:12px}.asks .ask-t{font-size:15px}.asks .ask-d{font-size:12px}.asks .ask-q{display:none}
+.asks .ask-b .primary,.asks .ask-b .ghost{padding:7px 10px;font-size:13px}
+.magnet.ask-m::before{background:var(--violet);box-shadow:0 0 8px var(--violet)}
 .magnets{display:flex;gap:10px;justify-content:flex-end;margin:12px 2px 0;flex-wrap:wrap}
 .magnet{border:1px solid var(--line);background:var(--surface);border-radius:999px;padding:5px 16px;font-size:14px;display:flex;gap:8px;align-items:center}
 .magnet::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--cyan);box-shadow:0 0 8px var(--cyan)}
@@ -523,7 +532,8 @@ function renderMap(){
   else $('map').insertAdjacentHTML('beforeend',`<button type="button" class="goal-hint" data-view="goals">${goalCands().length?`目的の候補が${goalCands().length}件あります`:'目的はここに星として光ります'}</button>`);
   layoutNet();
   const review=units.filter(u=>!u.reviewed).length+(state.failed||[]).length+cats().filter(c=>!c.reviewed).length+goalCands().length;
-  $('magnets').innerHTML=`<button type="button" class="magnet" data-view="review" aria-pressed="${ui.view==='review'}">見直し${review?`<span class="n">${review}</span>`:''}</button>
+  $('magnets').innerHTML=`<button type="button" class="magnet ask-m" data-view="ask" aria-pressed="${ui.view==='ask'}">Claudeに頼む${(state.pending&&state.pending.memos)?`<span class="n">${state.pending.memos}</span>`:''}</button>
+    <button type="button" class="magnet" data-view="review" aria-pressed="${ui.view==='review'}">見直し${review?`<span class="n">${review}</span>`:''}</button>
     <button type="button" class="magnet" data-view="goals" aria-pressed="${ui.view==='goals'||ui.view==='goal'}">目的${goalCands().length?`<span class="n">${goalCands().length}</span>`:''}</button>
     <button type="button" class="magnet" data-view="core" aria-pressed="${ui.view==='core'}">核${state.core?'':'<span class="n">まだ</span>'}</button>
     <button type="button" class="magnet" data-view="growth" aria-pressed="${ui.view==='growth'}">脳の成長</button>
@@ -1024,7 +1034,7 @@ function renderActView(){
     </section>
     <section><div class="av-sh"><h2>ToDo</h2></div><div id="av-tasks"></div></section>
   </main>
-  <nav class="av-tab" aria-label="画面の切り替え"><button type="button" data-acttab="brain"><span></span>脳</button><button type="button" class="on" aria-current="page"><span></span>行動</button><button type="button" data-acttab="rec"><span></span>記録</button><button type="button" data-acttab="review"><span></span>見直し</button></nav>`;
+  <nav class="av-tab" aria-label="画面の切り替え"><button type="button" data-acttab="brain"><span></span>脳</button><button type="button" class="on" aria-current="page"><span></span>行動</button><button type="button" data-acttab="rec"><span></span>記録</button><button type="button" data-acttab="review"><span></span>見直し</button><button type="button" data-acttab="ask"><span></span>頼む</button></nav>`;
   renderTasks($('av-tasks'),{embedded:true});
   const inp=$('t-new');if(inp)inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing)addTaskUI();});
 }
@@ -1124,6 +1134,35 @@ async function renderAccount(p){
   </div>
   <div class="actions" style="justify-content:flex-start;margin-top:18px"><button class="ghost" id="logout">ログアウト</button></div>`;
 }
+// ---- Claudeに頼む ----
+const ASKS=[
+  {id:'all',title:'お手入れをまとめて',desc:'未整理メモの整理に加えて、周辺情報の仕分け・引き出し・目的のタスク・再現度テスト・核のうち、必要なものを全部やってもらいます。',q:'knowkinのお手入れをして'},
+  {id:'memo',title:'未整理メモを整理',desc:'録音・写真・メール・チャットを、5つの層に振り分けます。',q:'knowkinの未整理メモを整理して'},
+  {id:'core',title:'核を育てる',desc:'貯まった記憶から、あなたの考え方をまとめ直します。',q:'knowkinの核を育てて',later:'core'},
+  {id:'quiz',title:'再現度テストを作る',desc:'「あなたならどう答えるか」を予想する問題を3問作ります。',q:'knowkinの再現度テストを作って',later:'quiz'},
+  {id:'goal',title:'目的からタスクを作る',desc:'これまでの知識をもとに、目的に近づくタスクを提案します。',q:'knowkinの目的からタスクを作って'},
+  {id:'peri',title:'周辺情報を仕分ける',desc:'自分と関わりの薄い情報や人を「周辺」に分けます。',q:'knowkinの周辺情報を仕分けて'},
+  {id:'drawer',title:'引き出しを整理',desc:'テーマが決まっていない記憶を、引き出しに入れます。',q:'knowkinの引き出しを整理して'},
+  {id:'today',title:'今日やることを聞く',desc:'タスク・目的・核をふまえて、今日の優先順位を出してもらいます。',q:'knowkinを見て、今日やることを優先順に教えて'},
+  {id:'week',title:'今週の振り返り',desc:'できたこと・学んだこと・来週の一歩をまとめてもらいます。',q:'knowkinを見て、今週の振り返りをして。できたこと・学んだこと・来週の一歩を出して'},
+  {id:'growth',title:'脳の成長を相談',desc:'今のknowkinに足りないものと、次に何を残せば伸びるかを聞きます。',q:'knowkinの脳の成長を見て、次に何を残せばいいか教えて'},
+];
+const claudeUrl=q=>'https://claude.ai/new?q='+encodeURIComponent(q);
+function renderAsk(p){
+  const pd=state.pending||{};const core=state.core;
+  const fmt=d=>d?new Date(d).toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo',month:'numeric',day:'numeric'}):'まだ';
+  const stat=[['未整理のメモ',pd.memos||0,'件'],['仕分け待ち',pd.relevance||0,'件'],['引き出し未決定',pd.drawers||0,'件'],['採点待ちのテスト',pd.quiz||0,'問']];
+  const done=a=>(a.later==='core'&&pd.core_req)||(a.later==='quiz'&&pd.quiz_req);
+  const card=a=>`<div class="ask${a.id==='all'?' main':''}"><p class="ask-t">${a.title}</p><p class="ask-d">${a.desc}</p><p class="ask-q">「${esc(a.q)}」</p>
+    <div class="ask-b"><a class="primary" href="${claudeUrl(a.q)}" target="_blank" rel="noopener" data-askcopy="${esc(a.q)}">Claudeで今すぐ</a>
+    ${a.later?`<button class="ghost" data-asklater="${a.later}"${done(a)?' disabled':''}>${done(a)?'依頼済み':'次の整理で'}</button>`:''}
+    ${a.id==='growth'?'<button class="ghost" data-view="growth">画面で見る</button>':''}</div></div>`;
+  p.innerHTML=`<h2>Claudeに頼む</h2><p class="lead">押すとClaudeの新しい会話が開き、頼む言葉が入った状態になります。そのまま送るだけです。3時間ごとの自動の整理でも、同じことを順番にやっています。</p>
+  <div class="ask-stat">${stat.map(s=>`<span><b>${s[1]}</b>${s[2]} ${s[0]}</span>`).join('')}<span>核の更新 <b>${fmt(core&&core.updatedAt)}</b></span></div>
+  ${card(ASKS[0])}
+  <div class="asks">${ASKS.slice(1).map(card).join('')}</div>
+  <p class="hint" style="margin-top:14px">Claudeが開かないときは、頼む言葉がコピーされているので、Claudeの会話に貼り付けてください。iPhoneのショートカットで「URLを開く」にこのボタンのリンクを入れると、Siriに話しかけて頼むこともできます。</p>`;
+}
 // ---- 脳の成長 ----
 function spark(vals,col){
   const w=140,hgt=36,pts=vals.map((v,i)=>v==null?null:[i*(w/(vals.length-1)),v]);const nums=vals.filter(v=>v!=null);
@@ -1159,7 +1198,7 @@ async function renderGrowth(p){
   ${g.hints.length?`<h4>次に伸ばすには</h4><ul class="gr-hints">${g.hints.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
   ${g.quiz_recent.length?`<details><summary>最近のテストの結果</summary><ul class="list">${g.quiz_recent.map(q=>`<li class="item"><div class="body"><div class="type" style="color:${q.rating==='great'?'#6FCF97':q.rating==='ok'?'#DDB262':'#FF7A9A'}">${q.rating==='great'?'◎ そのとおり':q.rating==='ok'?'○ だいたい':'△ 違う'}</div><p class="content">${esc(q.question)}</p><p class="quote">予想：${esc(q.prediction)}</p>${q.correction?`<p class="quote">あなたの答え：${esc(q.correction)}</p>`:''}</div></li>`).join('')}</ul></details>`:''}`;
 }
-const PANELS={rec:renderRec,layer:renderLayer,review:renderReview,core:renderCore,account:renderAccount,goals:renderGoals,goal:renderGoal,growth:renderGrowth};
+const PANELS={rec:renderRec,layer:renderLayer,review:renderReview,core:renderCore,account:renderAccount,goals:renderGoals,goal:renderGoal,growth:renderGrowth,ask:renderAsk};
 function render(){renderMap();(PANELS[ui.view]||renderRec)($('panel'));if(ui.actOpen)renderActView();}
 
 // ---- 操作 ----
@@ -1179,6 +1218,7 @@ document.addEventListener('click',async e=>{
     if(t.id==='pwBtn'){try{await api('/api/account/password',{method:'POST',body:JSON.stringify({current:$('pw-cur').value,next:$('pw-new').value})});authMode='login';showLogin('パスワードを変えました。新しいパスワードでログインしてください。');}catch(err){setStatus(err.message,true);}return;}
     if(t.dataset.goal){if((recorder&&recorder.state==='recording')||live||prog){setStatus('録音・アップロードの処理中です。',true);return;}ui.view='goal';ui.goal=Number(t.dataset.goal);ui.armed=null;setStatus('');render();$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.dataset.rel){const [id,v]=t.dataset.rel.split('|');const u=localUnit(id);u.relevance=v;render();await patch(u.id,{relevance:v});setStatus(v==='peripheral'?'周辺の情報に移しました。':'自分に関係ある記憶に戻しました。');return;}
+    if(t.dataset.asklater){const k=t.dataset.asklater;await api(k==='core'?'/api/core/request':'/api/quiz/request',{method:'POST'});setStatus('依頼しました。次の自動の整理のときにClaudeが行います。');await load();return;}
     if(t.dataset.qrate){const [id,rt]=t.dataset.qrate.split('|');if(rt==='great'){await api(`/api/quiz/${id}/rate`,{method:'POST',body:JSON.stringify({rating:rt})});ui.growth=null;setStatus('採点しました。');render();return;}ui.quizPending={id:Number(id),rating:rt};render();$('qfix').focus();return;}
     if(t.dataset.qcancel!==undefined){ui.quizPending=null;render();return;}
     if(t.dataset.qsend){const pnd=ui.quizPending;const fix=$('qfix').value.trim();if(pnd.rating==='miss'&&!fix){setStatus('本当の考えを一言書いてください。それがknowkinの新しい記憶になります。',true);return;}
@@ -1235,6 +1275,7 @@ document.addEventListener('click',async e=>{
     if(t.dataset.reclass){t.disabled=true;setStatus('分類しています…');const r=await api(`/api/memos/${t.dataset.reclass}/classify`,{method:'POST'});setStatus(`${r.added}件の記憶を残しました。`);await load();return;}
   }catch(err){if(err.message!=='unauthorized')setStatus('うまくいきませんでした：'+err.message,true);}
 });
+document.addEventListener('click',e=>{const a=e.target.closest('[data-askcopy]');if(a){try{navigator.clipboard.writeText(a.dataset.askcopy);}catch(_){}}});
 document.addEventListener('change',async e=>{
   const s=e.target;
   if(s.dataset&&s.dataset.move){const v=s.value;if(!v)return;const u=localUnit(s.dataset.move);

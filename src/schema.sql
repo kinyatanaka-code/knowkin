@@ -188,3 +188,6 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS quiz_request_at TIMESTAMPTZ;
 -- 自分との関わり：direct（自分が当事者）/ peripheral（周辺の情報・自分との関わりが薄い）
 ALTER TABLE units ADD COLUMN IF NOT EXISTS relevance TEXT NOT NULL DEFAULT 'direct';
 ALTER TABLE units ADD COLUMN IF NOT EXISTS relevance_checked BOOLEAN NOT NULL DEFAULT FALSE;
+
+-- 核を育ててほしいという依頼
+ALTER TABLE users ADD COLUMN IF NOT EXISTS core_request_at TIMESTAMPTZ;

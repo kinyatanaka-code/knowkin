@@ -4,7 +4,7 @@ import { addQuiz, quizMaterial, quizNeeded } from './growth.js';
 import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, setGoalNote } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
-  getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getGenres, getUnitsForRelevance, setRelevance, getUnitsWithoutGenre, setGenres, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
+  getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getGenres, getUnitsForRelevance, setRelevance, upkeepNeeds, getUnitsWithoutGenre, setGenres, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
 } from './brain.js';
 
 const text = (t) => ({ content: [{ type: 'text', text: t }] });
@@ -157,14 +157,20 @@ export function buildMcpServer(uid) {
   server.registerTool('get_unclassified_memos', {
     title: '未整理のメモを取得',
     description:
-      'Web画面やボイスメモで記録されたまま、まだ分類されていないメモと、重複判定用の既存の記憶を返す。'
-      + 'ユーザーが「knowkinを整理して」「未整理メモを整理して」と頼んだら呼び、各メモを分類して save_units で1メモずつ保存すること。',
+      'Web画面やボイスメモで記録されたまま、まだ分類されていないメモと、重複判定用の既存の記憶、あわせて頼まれている作業（周辺情報の仕分け・引き出し・目的のタスク・再現度テスト・核）を返す。'
+      + 'ユーザーが「knowkinを整理して」「knowkinのお手入れをして」「未整理メモを整理して」と頼んだら呼び、各メモを分類して save_units で1メモずつ保存し、返ってきた作業もすべて行うこと。',
     annotations: { readOnlyHint: true },
   }, async () => {
     const memos = await getUnclassified(uid, 20);
     const photos = await getUnclassifiedPhotos(uid, 4);
     const reqs = await pendingTaskRequests(uid);
-    const quizPart = (await quizNeeded(uid)) ? '\n\n## 再現度テストを作ってください\nget_quiz_material で材料を読み、「本人ならどう答えるか」を予想するテストを3問作って add_quiz で入れてください。' : '';
+    const up = await upkeepNeeds(uid);
+    const upPart = [
+      up.relevance ? `\n\n## 周辺情報の仕分けをしてください\n本人との関わりをまだ確かめていない記憶が${up.relevance}件あります。get_units_for_relevance で読み、set_relevance で仕分けてください。` : '',
+      up.drawers ? `\n\n## 引き出しの整理をしてください\n引き出しが決まっていない記憶が${up.drawers}件あります。get_units_without_drawer で読み、set_drawers で入れてください。` : '',
+      up.core ? '\n\n## 核を育ててください\n（メモの整理と上の作業が終わったあと、最後に）get_core_material で材料を読み、本人の考え方の核をまとめ直して save_core で保存してください。' : '',
+    ].join('');
+    const quizPart = upPart + ((await quizNeeded(uid)) ? '\n\n## 再現度テストを作ってください\nget_quiz_material で材料を読み、「本人ならどう答えるか」を予想するテストを3問作って add_quiz で入れてください。' : '');
     const reqPart = quizPart + (reqs.length ? `\n\n## タスクづくりを頼まれている目的\n次の目的について、get_goal_context で材料を読み、これまでの知識をもとにタスクを作って add_goal_tasks で入れてください：${reqs.map((r) => `id ${r.id}「${r.title}」`).join('、')}` : '');
     if (!memos.length && !photos.length) return text(reqPart ? `未整理のメモはありません。${reqPart}` : '未整理のメモはありません。');
     const existing = await getDedupList(uid);

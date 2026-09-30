@@ -167,6 +167,26 @@ export async function setGenres(uid, list) {
   return n;
 }
 
+/** 整理のときに一緒にやってほしいこと（核・仕分け・引き出し） */
+export async function upkeepNeeds(uid) {
+  const { rows } = await pool.query(
+    `SELECT u.core_request_at,
+       (SELECT updated_at FROM cores WHERE user_id = u.id) AS core_at,
+       (SELECT count(*)::int FROM units WHERE user_id = u.id AND relevance = 'direct'
+          AND created_at > coalesce((SELECT updated_at FROM cores WHERE user_id = u.id), 'epoch')) AS new_since_core,
+       (SELECT count(*)::int FROM units WHERE user_id = u.id AND NOT relevance_checked AND type NOT IN ('task','goal')) AS unchecked,
+       (SELECT count(*)::int FROM units WHERE user_id = u.id AND genre = '') AS no_genre
+     FROM users u WHERE u.id = $1`, [uid]);
+  const r = rows[0] || {};
+  const weekOld = !r.core_at || Date.now() - new Date(r.core_at).getTime() > 7 * 86400000;
+  return {
+    core: Boolean(r.core_request_at) || (weekOld && r.new_since_core >= 10),
+    relevance: r.unchecked > 0 ? r.unchecked : 0,
+    drawers: r.no_genre >= 10 ? r.no_genre : 0,
+  };
+}
+export async function requestCore(uid) { await pool.query('UPDATE users SET core_request_at = now() WHERE id = $1', [uid]); }
+
 /** 自分との関わりをまだ確かめていない記憶（周辺情報の仕分け用） */
 export async function getUnitsForRelevance(uid, limit = 150) {
   const { rows } = await pool.query(
@@ -422,6 +442,7 @@ export async function saveCore(uid, r) {
      ON CONFLICT (user_id) DO UPDATE SET data = EXCLUDED.data, updated_at = now()`,
     [data, uid],
   );
+  await pool.query('UPDATE users SET core_request_at = NULL WHERE id = $1', [uid]);
   return data;
 }
 
@@ -539,7 +560,14 @@ export async function getState(uid) {
     getCategories(uid),
     getGoals(uid),
   ]);
-  return { units: units.rows, failed: failed.rows, core, recordings, photos, categories, goals, canSummarizeAudio, canTranscribe };
+  const pend = (await pool.query(
+    `SELECT (SELECT count(*)::int FROM units WHERE user_id = $1 AND NOT relevance_checked AND type NOT IN ('task','goal')) AS relevance,
+            (SELECT count(*)::int FROM units WHERE user_id = $1 AND genre = '') AS drawers,
+            (SELECT count(*)::int FROM brain_quiz WHERE user_id = $1 AND rating IS NULL) AS quiz,
+            (SELECT count(*)::int FROM memos WHERE user_id = $1 AND NOT classified) AS memos,
+            (SELECT core_request_at FROM users WHERE id = $1) AS core_req,
+            (SELECT quiz_request_at FROM users WHERE id = $1) AS quiz_req`, [uid])).rows[0];
+  return { units: units.rows, failed: failed.rows, core, recordings, photos, categories, goals, pending: pend, canSummarizeAudio, canTranscribe };
 }
 
 // ---- Claudeに渡すテキスト整形 ----
