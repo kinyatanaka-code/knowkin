@@ -49,7 +49,7 @@ try {
   const server = buildMcpServer(1);
   const tools = Object.keys(server._registeredTools || {});
   const expected = ['get_core', 'get_current_tasks', 'search_memory', 'get_person', 'add_memo',
-    'get_unclassified_memos', 'save_units', 'get_core_material', 'save_core', 'update_task', 'get_recent_recordings', 'check_imported', 'get_categories', 'create_category', 'get_units_without_drawer', 'set_drawers', 'get_goals', 'propose_goal', 'link_to_goal', 'update_goal_position', 'get_goal_context', 'add_goal_tasks', 'get_quiz_material', 'add_quiz', 'get_units_for_relevance', 'set_relevance'];
+    'get_unclassified_memos', 'save_units', 'get_core_material', 'save_core', 'update_task', 'get_recent_recordings', 'check_imported', 'get_categories', 'create_category', 'get_units_without_drawer', 'set_drawers', 'get_goals', 'propose_goal', 'link_to_goal', 'update_goal_position', 'get_goal_context', 'add_goal_tasks', 'get_quiz_material', 'add_quiz', 'get_units_for_relevance', 'set_relevance', 'get_growth'];
   const missing = expected.filter((t) => !tools.includes(t));
   if (missing.length) ng(`MCPツールが足りません：${missing.join(', ')}`); else ok(`MCPツール ${tools.length}個`);
 } catch (e) { ng(`MCPサーバーの組み立て\n${e.stack}`); }

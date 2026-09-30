@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { addQuiz, quizMaterial, quizNeeded } from './growth.js';
+import { addQuiz, getGrowth, quizMaterial, quizNeeded } from './growth.js';
 import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, setGoalNote } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
@@ -158,7 +158,7 @@ export function buildMcpServer(uid) {
     title: '未整理のメモを取得',
     description:
       'Web画面やボイスメモで記録されたまま、まだ分類されていないメモと、重複判定用の既存の記憶、あわせて頼まれている作業（周辺情報の仕分け・引き出し・目的のタスク・再現度テスト・核）を返す。'
-      + 'ユーザーが「knowkinを整理して」「knowkinのお手入れをして」「未整理メモを整理して」と頼んだら呼び、各メモを分類して save_units で1メモずつ保存し、返ってきた作業もすべて行うこと。',
+      + 'ユーザーが「整理」とだけ言ったとき、または「knowkinを整理して」「knowkinのお手入れをして」「未整理メモを整理して」と頼んだら呼び、各メモを分類して save_units で1メモずつ保存し、返ってきた作業もすべて行うこと。',
     annotations: { readOnlyHint: true },
   }, async () => {
     const memos = await getUnclassified(uid, 20);
@@ -355,6 +355,30 @@ ${JSON.stringify(c.open)}`);
     catch (e) { return text(`入れられませんでした：${e.message}`); }
   });
 
+  server.registerTool('get_growth', {
+    title: '脳の成長',
+    description: 'ユーザーが「成長」とだけ言ったとき、または「knowkinの成長を見せて」「どれくらい脳に近づいた？」と聞いたときに呼ぶ。量・深さ・広さ・再現度と、次に伸ばすためのヒント、採点待ちの再現度テストを返す。結果をわかりやすくまとめて伝えること。',
+    annotations: { readOnlyHint: true },
+  }, async () => {
+    const g = await getGrowth(uid);
+    const L = { event: '出来事', know: '知識', think: '思考', act: '行動', rel: '関係' };
+    const r = g.repro;
+    const lines = [
+      `# 脳の成長`,
+      `再現度：今月 ${r.month == null ? 'まだ採点なし' : `${r.month}%（${r.month_count}問）`}／これまで ${r.all == null ? '—' : `${r.all}%（${r.all_count}問）`}`,
+      `週ごとの再現度（古い順）：${r.weeks.map((w) => (w == null ? '—' : w + '%')).join(' → ')}`,
+      `量：${g.total}件（この1週間 +${g.last7}）。8週間の累計の推移：${g.weeks.map((w) => w.total).join(' → ')}`,
+      `層のバランス：${Object.entries(g.layers).map(([k, v]) => `${L[k] || k.replace(/^n:/, '')} ${v}`).join('、')}`,
+      `深さ：定着した考え（2回以上出てきた教訓・価値観・判断）${g.depth.rooted}個、理由つきの判断 ${g.depth.decisions_with_reason}/${g.depth.decisions}、価値観 ${g.depth.values}件`,
+      `広さ：関わる人 ${g.breadth.people}人、引き出し ${g.breadth.genres}個、タスクは仕事 ${g.breadth.work}・プライベート ${g.breadth.life}`,
+      '', '## 次に伸ばすには', ...(g.hints.length ? g.hints.map((x) => `- ${x}`) : ['- 特になし']),
+      '', '## 採点待ちの再現度テスト', ...(g.quiz_open.length ? g.quiz_open.map((q) => `- Q. ${q.question}（予想：${q.prediction}）`) : ['- なし']),
+      '', '## 最近の採点', ...(g.quiz_recent.length ? g.quiz_recent.map((q) => `- ${q.rating === 'great' ? '◎' : q.rating === 'ok' ? '○' : '△'} ${q.question}${q.correction ? `（本人の答え：${q.correction}）` : ''}`) : ['- なし']),
+      '', '（周辺の情報は数に含めていない。採点はknowkinの「脳の成長」画面で行う）',
+    ];
+    return text(lines.join('\n'));
+  });
+
   server.registerTool('get_quiz_material', {
     title: '再現度テストの材料',
     description: 'ユーザーが「knowkinの再現度テストを作って」と頼んだとき、または整理のときにテストづくりを頼まれたときに呼ぶ。本人の核と記憶の一部、過去のテストの結果を返す。',
@@ -440,7 +464,7 @@ ${JSON.stringify(units)}`);
   server.registerTool('get_core_material', {
     title: '核を育てる材料を取得',
     description:
-      'ユーザーが「knowkinの核を育てて」「考え方をまとめ直して」と頼んだら呼ぶ。教訓・判断・価値観・人物などの記憶を返すので、'
+      'ユーザーが「核」とだけ言ったとき、または「knowkinの核を育てて」「考え方をまとめ直して」と頼んだら呼ぶ。教訓・判断・価値観・人物などの記憶を返すので、'
       + 'それを読んで本人の考え方の核をまとめ、save_core で保存すること。',
     annotations: { readOnlyHint: true },
   }, async () => {
