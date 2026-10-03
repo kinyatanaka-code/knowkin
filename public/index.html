@@ -885,18 +885,30 @@ function unitHTML(u,{review=false,showLayer=false,relToggle=false}={}){
 }
 // ---- 引き出し：層の中をテーマ（関係は人物）ごとに分ける ----
 const cleanTag=t=>String(t||'').replace(/^#/,'').trim();
+/** 人物の記憶の主語：本文の先頭に近い位置に名前が出てくる人（なければ people の先頭） */
+function subjectOf(u,names){
+  const c=String(u.content||'');let best=names[0],pos=Infinity;
+  for(const n of names){const base=n.replace(/(さん|様|氏)$/,'');const i=c.indexOf(base);if(i>=0&&i<pos){pos=i;best=n;}}
+  return best;
+}
 function drawersFor(layerId){
   const every=state.units||[];const all=every.filter(u=>!isPeri(u));
   const periDrawer=list=>list.length?[{key:'peri',label:'周辺の情報',units:list.slice().sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))),last:true,peri:true}]:[];
   if(layerId==='rel'){
-    const map=new Map();
-    for(const u of all)for(const n of (u.people||[])){const k=String(n).trim();if(!k)continue;if(!map.has(k))map.set(k,[]);map.get(k).push(u);}
+    // 人物の記憶は「誰についての記憶か（主語）」の人だけに入れる。ほかの記憶は、名前が出てくる全員の「関わった記憶」に入れる
+    const map=new Map();const get=k=>{if(!map.has(k))map.set(k,{about:[],with:[]});return map.get(k);};
+    for(const u of all){
+      const names=(u.people||[]).map(n=>String(n).trim()).filter(Boolean);if(!names.length)continue;
+      if(layerOf(u)==='rel'){get(subjectOf(u,names)).about.push(u);}
+      else for(const n of new Set(names))get(n).with.push(u);
+    }
     const periRel=every.filter(u=>isPeri(u)&&(layerOf(u)==='rel'||(u.people||[]).length));
-    const ds=[...map].map(([name,us])=>({key:'p:'+name,label:name,person:true,
-      units:us.slice().sort((a,b)=>(layerOf(b)==='rel')-(layerOf(a)==='rel')||String(b.created_at).localeCompare(String(a.created_at)))}));
+    const byNew=(a,b)=>String(b.created_at).localeCompare(String(a.created_at));
+    const ds=[...map].filter(([,v])=>v.about.length||v.with.length>=2).map(([name,v])=>({key:'p:'+name,label:name,person:true,
+      about:v.about.sort(byNew),with:v.with.sort(byNew),units:[...v.about.sort(byNew),...v.with.sort(byNew)]}));
     const orphan=all.filter(u=>layerOf(u)==='rel'&&!(u.people||[]).length);
     if(orphan.length)ds.push({key:'p:',label:'名前なし',units:orphan});
-    return [...ds.sort((a,b)=>b.units.length-a.units.length),...periDrawer(periRel).map(d=>({...d,label:'周辺の人'}))];
+    return [...ds.sort((a,b)=>(b.about.length-a.about.length)||(b.units.length-a.units.length)),...periDrawer(periRel).map(d=>({...d,label:'周辺の人'}))];
   }
   let list=all.filter(u=>layerOf(u)===layerId);
   const periList=every.filter(u=>isPeri(u)&&layerOf(u)===layerId);
@@ -1064,11 +1076,13 @@ function renderMemList(){
     box.innerHTML=`<button class="back" type="button" data-drawer="">← 引き出し一覧</button>
       <div class="drawer-head" style="--c:${open.peri?'var(--muted)':col}"><h3>${esc(open.label)}</h3><span>${open.units.length}件</span></div>
       ${open.peri?'<p class="hint" style="margin:0 0 6px">自分が当事者ではない、周りのやり取りなどです。核や再現度テスト、目的のタスクづくりには使いません。</p>':''}
-      <ul class="list">${open.units.slice(0,300).map(u=>unitHTML(u,{showLayer:lid==='rel',relToggle:true})).join('')}</ul>`;
+      ${open.person?`${open.about.length?`<h4>人物像</h4><ul class="list">${open.about.map(u=>unitHTML(u,{showLayer:true,relToggle:true})).join('')}</ul>`:''}
+        ${open.with.length?`<h4>関わった記憶</h4><ul class="list">${open.with.slice(0,300).map(u=>unitHTML(u,{showLayer:true,relToggle:true})).join('')}</ul>`:''}`
+      :`<ul class="list">${open.units.slice(0,300).map(u=>unitHTML(u,{showLayer:lid==='rel',relToggle:true})).join('')}</ul>`}`;
     return;
   }
   box.innerHTML=`<div class="drawers">${ds.map(d=>`<button type="button" class="drawer${d.peri?' peri':''}" data-drawer="${esc(d.key)}" style="--c:${d.peri?'var(--muted)':col}">
-      <span class="drawer-top"><span class="drawer-name">${esc(d.label)}</span><span class="drawer-n">${d.units.length}</span></span>
+      <span class="drawer-top"><span class="drawer-name">${esc(d.label)}</span><span class="drawer-n">${d.person?`${d.about.length}・${d.with.length}`:d.units.length}</span></span>
       <span class="drawer-prev">${esc(drawerPreview(d))}</span></button>`).join('')}</div>`;
 }
 function renderReview(p){
