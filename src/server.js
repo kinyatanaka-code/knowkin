@@ -17,7 +17,7 @@ import {
 import { buildMcpServer } from './mcp.js';
 import { getGrowth, rateQuiz, requestQuiz } from './growth.js';
 import { addMilestone, requestTasks, setMilestone, snapshotGoals, updateGoal } from './goals.js';
-import { authUrl, googleEnabled, googleStatus, handleCallback, syncAll, syncUser, unlink } from './google.js';
+import { authUrl, googleEnabled, googleStatus, handleCallback, listSpaces, setSpaceExcluded, syncAll, syncUser, unlink } from './google.js';
 import { baseUrl, mcpUnauthorized, oauthRouter, revokeAllTokens, userIdFromAccessToken } from './oauth.js';
 
 const { MCP_SECRET, PORT = 3000 } = process.env;
@@ -214,6 +214,8 @@ api.get('/google/connect', wrap(async (req, res) => {
 }));
 api.post('/google/sync', wrap(async (req, res) => res.json(await syncUser(req.uid))));
 api.post('/google/disconnect', wrap(async (req, res) => { await unlink(req.uid); res.json({ ok: true }); }));
+api.get('/google/spaces', wrap(async (req, res) => res.json(await listSpaces(req.uid))));
+api.patch('/google/spaces', wrap(async (req, res) => { await setSpaceExcluded(req.uid, req.body?.name, req.body?.excluded); res.json({ ok: true }); }));
 app.use('/api', api);
 
 // ---- MCP（Claude.aiのコネクタ用）: URLの連携キーでアカウントを特定 ----

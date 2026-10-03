@@ -330,6 +330,12 @@ export async function getUnclassifiedPhotos(uid, limit = 4) {
   return rows;
 }
 
+/** 取り込むものがなかった ref を、取り込み済みとして記録する */
+export async function markImported(uid, ref, note = '') {
+  await pool.query(`INSERT INTO memos(user_id, text, source, classified, ref) VALUES($1, $2, 'claude', TRUE, $3)
+    ON CONFLICT DO NOTHING`, [uid, `（取り込み記録：${ref}${note ? '・' + note : ''}）`, ref]);
+}
+
 /** すでに取り込み済みの ref を返す */
 export async function importedRefs(uid, refs) {
   if (!refs.length) return [];

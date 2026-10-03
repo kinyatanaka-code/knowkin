@@ -155,7 +155,14 @@ async function syncChat(uid, token, link) {
   const since = new Date(link.chat_after || Date.now() - 3 * 86400 * 1000);
   const spaces = await gget(token, 'chat.googleapis.com', `/v1/spaces?pageSize=${MAX_SPACES}`);
   let saved = 0; let newest = since.getTime();
+  const { rows: prefs } = await pool.query('SELECT name FROM google_spaces WHERE user_id = $1 AND excluded', [uid]);
+  const excluded = new Set(prefs.map((r) => r.name));
   for (const sp of spaces.spaces || []) {
+    const spTitle = sp.displayName || (sp.spaceType === 'DIRECT_MESSAGE' || sp.type === 'DM' ? 'ダイレクトメッセージ' : 'チャット');
+    await pool.query(
+      `INSERT INTO google_spaces(user_id, name, title, last_seen_at) VALUES($1, $2, $3, now())
+       ON CONFLICT (user_id, name) DO UPDATE SET title = EXCLUDED.title, last_seen_at = now()`, [uid, sp.name, spTitle]);
+    if (excluded.has(sp.name)) continue;
     const f = encodeURIComponent(`createTime > "${since.toISOString()}"`);
     let msgs;
     try { msgs = await gget(token, 'chat.googleapis.com', `/v1/${sp.name}/messages?pageSize=100&orderBy=createTime&filter=${f}`); }
@@ -170,7 +177,7 @@ async function syncChat(uid, token, link) {
     const title = sp.displayName || (sp.spaceType === 'DIRECT_MESSAGE' || sp.type === 'DM' ? 'ダイレクトメッセージ' : 'チャット');
     const text = [`【Googleチャット】${title}`, '', ...lines].join('\n').slice(0, 6000);
     const r = await addMemo(uid, text, 'gchat', null, `gchat:${sp.name}:${list[list.length - 1].name}`);
-    if (!r.duplicate) saved++;
+    if (!r.duplicate) { saved++; await pool.query('UPDATE google_spaces SET msg_count = msg_count + $3 WHERE user_id = $1 AND name = $2', [uid, sp.name, list.length]); }
   }
   await pool.query('UPDATE google_links SET chat_after = $2 WHERE user_id = $1', [uid, new Date(newest)]);
   return saved;
@@ -196,4 +203,18 @@ export async function syncAll() {
   if (!googleEnabled) return;
   const { rows } = await pool.query('SELECT user_id FROM google_links');
   for (const r of rows) { try { await syncUser(r.user_id); } catch (e) { console.error('google sync', r.user_id, e.message); } }
+}
+
+/** 取り込み対象のスペース一覧（よく取り込まれている順） */
+export async function listSpaces(uid) {
+  const { rows } = await pool.query(
+    `SELECT name, title, excluded, msg_count, last_seen_at FROM google_spaces WHERE user_id = $1 ORDER BY msg_count DESC, title`, [uid]);
+  return rows;
+}
+export async function setSpaceExcluded(uid, name, excluded) {
+  await pool.query('UPDATE google_spaces SET excluded = $3 WHERE user_id = $1 AND name = $2', [uid, String(name), Boolean(excluded)]);
+  if (excluded) {
+    // まだ整理していない、このスペースからのメモは片づける（記憶にはしない）
+    await pool.query(`UPDATE memos SET classified = TRUE WHERE user_id = $1 AND NOT classified AND ref LIKE $2`, [uid, `gchat:${name}:%`]);
+  }
 }

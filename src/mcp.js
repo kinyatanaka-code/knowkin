@@ -4,7 +4,7 @@ import { addQuiz, getGrowth, quizMaterial, quizNeeded } from './growth.js';
 import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, setGoalNote } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
-  getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getGenres, getUnitsForRelevance, setRelevance, upkeepNeeds, getUnitsWithoutGenre, setGenres, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
+  getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getGenres, getUnitsForRelevance, setRelevance, upkeepNeeds, markImported, getUnitsWithoutGenre, setGenres, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
 } from './brain.js';
 
 const text = (t) => ({ content: [{ type: 'text', text: t }] });
@@ -165,12 +165,25 @@ export function buildMcpServer(uid) {
     const photos = await getUnclassifiedPhotos(uid, 4);
     const reqs = await pendingTaskRequests(uid);
     const up = await upkeepNeeds(uid);
+    // kinbot・kincallから前日分を学ぶ（Claudeがkinbot・kincallのコネクタを使える場合）
+    const y = new Date(Date.now() + 9 * 3600000 - 86400000).toISOString().slice(0, 10);
+    const kRefs = [`kinbot:daily:${y}`, `kinbot:mine:${y}`, `kincall:daily:${y}`];
+    const kDone = new Set(await importedRefs(uid, kRefs));
+    const kTodo = kRefs.filter((r) => !kDone.has(r));
+    const kinPart = kTodo.length ? `
+
+## kinbot・kincallから学んでください（${y}の分）
+kinbot・kincallのコネクタが使えるときだけ行う。使えなければこの節は飛ばす。読み取りだけに使い、sf_create・sf_update などの書き込み系ツールは絶対に使わない。
+${kTodo.includes(`kinbot:mine:${y}`) ? `- 自分の商談（ref「kinbot:mine:${y}」）：kinbot の list_meetings や get_deal_events で、${y} に本人（田中欽也）が担当・同席した商談を探し、必要なら get_meeting_detail で中身を読む。相手の懸念、決まったこと、次のアクション、本人の話し方でうまくいった点・反省点を、add_memo（source は kinbot、ref は上のもの）で記憶にする。本人が当事者の商談だけを対象にし、他の担当者の商談は入れない` : ''}
+${kTodo.includes(`kinbot:daily:${y}`) ? `- チームの要点（ref「kinbot:daily:${y}」）：list_deals を from と to に ${y} で呼び、商談の件数・結果ごとの件数・動きのあった案件を1件の event にまとめて add_memo（source は kinbot）。気になる傾向があれば question も作る` : ''}
+${kTodo.includes(`kincall:daily:${y}`) ? `- 架電の要点（ref「kincall:daily:${y}」）：kincall の list_call_stats を ${y} で呼び、チームと本人の架電数・接触数・アポ数を1件の event にまとめて add_memo（source は kincall、goal_id は関係する目的）` : ''}
+- その日にデータがない（休日など）ときは、skip_import でその ref を記録する（同じ日を二度調べないため）` : '';
     const upPart = [
       up.relevance ? `\n\n## 周辺情報の仕分けをしてください\n本人との関わりをまだ確かめていない記憶が${up.relevance}件あります。get_units_for_relevance で読み、set_relevance で仕分けてください。` : '',
       up.drawers ? `\n\n## 引き出しの整理をしてください\n引き出しが決まっていない記憶が${up.drawers}件あります。get_units_without_drawer で読み、set_drawers で入れてください。` : '',
       up.core ? '\n\n## 核を育ててください\n（メモの整理と上の作業が終わったあと、最後に）get_core_material で材料を読み、本人の考え方の核をまとめ直して save_core で保存してください。' : '',
     ].join('');
-    const quizPart = upPart + ((await quizNeeded(uid)) ? '\n\n## 再現度テストを作ってください\nget_quiz_material で材料を読み、「本人ならどう答えるか」を予想するテストを3問作って add_quiz で入れてください。' : '');
+    const quizPart = kinPart + upPart + ((await quizNeeded(uid)) ? '\n\n## 再現度テストを作ってください\nget_quiz_material で材料を読み、「本人ならどう答えるか」を予想するテストを3問作って add_quiz で入れてください。' : '');
     const reqPart = quizPart + (reqs.length ? `\n\n## タスクづくりを頼まれている目的\n次の目的について、get_goal_context で材料を読み、これまでの知識をもとにタスクを作って add_goal_tasks で入れてください：${reqs.map((r) => `id ${r.id}「${r.title}」`).join('、')}` : '');
     if (!memos.length && !photos.length) return text(reqPart ? `未整理のメモはありません。${reqPart}` : '未整理のメモはありません。');
     const existing = await getDedupList(uid);
@@ -436,6 +449,12 @@ ${JSON.stringify(units)}`);
     description: '記憶ごとに、本人が当事者（direct）か周辺の情報（peripheral）かを保存する。peripheral は核・再現度テスト・目的のタスクづくりの材料から外れ、画面では「周辺の情報」にまとまる。',
     inputSchema: { items: z.array(z.object({ id: z.number().int(), relevance: z.enum(['direct', 'peripheral']) })).min(1).max(200) },
   }, async ({ items }) => text(`${await setRelevance(uid, items)}件を仕分けました。`));
+
+  server.registerTool('skip_import', {
+    title: '取り込むものがなかったことを記録',
+    description: 'kinbot・kincallなどから取り込もうとしたが、その日のデータがなかったときに呼ぶ。同じ ref を二度調べないように記録する。',
+    inputSchema: { ref: z.string().max(200), note: z.string().max(100).optional() },
+  }, async ({ ref, note }) => { await markImported(uid, ref, note || ''); return text(`${ref} を取り込み済みにしました。`); });
 
   server.registerTool('check_imported', {
     title: '取り込み済みか確認',

@@ -191,3 +191,14 @@ ALTER TABLE units ADD COLUMN IF NOT EXISTS relevance_checked BOOLEAN NOT NULL DE
 
 -- 核を育ててほしいという依頼
 ALTER TABLE users ADD COLUMN IF NOT EXISTS core_request_at TIMESTAMPTZ;
+
+-- Googleチャットのスペースごとの取り込み設定
+CREATE TABLE IF NOT EXISTS google_spaces (
+  user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name         TEXT NOT NULL,                    -- spaces/XXXX
+  title        TEXT NOT NULL DEFAULT '',
+  excluded     BOOLEAN NOT NULL DEFAULT FALSE,
+  msg_count    INTEGER NOT NULL DEFAULT 0,
+  last_seen_at TIMESTAMPTZ,
+  PRIMARY KEY (user_id, name)
+);

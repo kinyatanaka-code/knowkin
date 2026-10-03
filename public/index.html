@@ -174,6 +174,11 @@ button{cursor:pointer}
 .quiz .pred{margin:8px 0 0;padding:8px 12px;border-left:3px solid var(--violet);background:var(--bg2);border-radius:0 8px 8px 0}.quiz .pred span{display:block;font-size:12px;color:var(--muted)}
 .quiz .basis{margin:6px 0 0;font-size:12px;color:var(--muted)}
 .qbtns{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}.qbtns button{flex:1;min-width:90px;border:1px solid var(--line);background:var(--surface2);border-radius:10px;padding:8px 6px;font-weight:700}
+.spaces{list-style:none;margin:0;padding:0;max-height:320px;overflow:auto;border:1px solid var(--line);border-radius:10px}
+.spaces li{border-bottom:1px solid var(--line)}.spaces li:last-child{border-bottom:0}
+.spaces label{display:flex;align-items:center;gap:10px;padding:9px 12px;font-size:14px}
+.spaces label span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.spaces small{color:var(--muted)}
+.spaces input{width:18px;height:18px;accent-color:var(--cyan)}
 .ask-stat{display:flex;flex-wrap:wrap;gap:6px 14px;font-size:13px;color:var(--muted);margin:0 0 14px}.ask-stat b{color:var(--ink);font-size:15px;margin-right:2px}
 .ask{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:4px}
 .ask.main{border-color:var(--cyan);margin-bottom:14px;background:linear-gradient(135deg,rgba(92,210,255,.12),rgba(176,124,255,.10)),var(--surface)}
@@ -1118,8 +1123,18 @@ function googleHTML(g){
   return `<p style="margin:0 0 4px">${esc(g.email||'連携中')} と連携しています</p>
     <div class="meta"><span>最終取り込み ${g.last_sync_at?esc(new Date(g.last_sync_at).toLocaleString('ja-JP',{timeZone:'Asia/Tokyo'})):'まだ'}</span>${g.last_result?`<span>${esc(g.last_result)}</span>`:''}</div>
     ${g.last_error?`<p class="status err" style="margin:6px 0 0">${esc(g.last_error)}</p>`:''}
-    <div class="actions" style="justify-content:flex-start;margin-top:10px"><button class="ghost" id="gsync">今すぐ取り込む</button><button class="ghost" id="gunlink">連携を解除</button></div>`;
+    <div class="actions" style="justify-content:flex-start;margin-top:10px"><button class="ghost" id="gsync">今すぐ取り込む</button><button class="ghost" id="gunlink">連携を解除</button></div>
+    <h4>取り込むGoogleチャットのスペース</h4>
+    <p class="hint" style="margin:0 0 6px">チェックを外したスペースは取り込みません。botの通知だけのスペースや、ほかの部署のスペースを外すとノイズが減ります。kinbot・kincallの数字は、整理のときに直接学ぶので、kinbotの通知スペースは外して大丈夫です。</p>
+    <div id="spaces">${spacesHTML()}</div>`;
 }
+function spacesHTML(){
+  const s=ui.spaces;
+  if(!s)return '<p class="hint" style="margin:0">読み込んでいます…</p>';
+  if(!s.length)return '<p class="hint" style="margin:0">まだスペースがありません。一度取り込むと一覧に出ます。</p>';
+  return `<ul class="spaces">${s.map(x=>`<li><label><input type="checkbox" data-space="${esc(x.name)}" ${x.excluded?'':'checked'}><span>${esc(x.title||x.name)}</span><small>${x.msg_count}件</small></label></li>`).join('')}</ul>`;
+}
+async function loadSpaces(){try{ui.spaces=await api('/api/google/spaces');}catch(_){ui.spaces=[];}const el=$('spaces');if(el)el.innerHTML=spacesHTML();}
 async function renderAccount(p){
   p.innerHTML=`<h2>アカウント</h2><p class="lead">読み込んでいます…</p>`;
   try{ui.account=ui.account||await api('/api/account');}catch(e){if(e.message!=='unauthorized')p.innerHTML=`<h2>アカウント</h2><p class="status err">${esc(e.message)}</p>`;return;}
@@ -1148,6 +1163,7 @@ async function renderAccount(p){
     <div class="actions" style="justify-content:flex-start"><button class="primary" id="pwBtn">変更する</button></div>
   </div>
   <div class="actions" style="justify-content:flex-start;margin-top:18px"><button class="ghost" id="logout">ログアウト</button></div>`;
+  if(a.google&&a.google.linked&&!ui.spaces)loadSpaces();
 }
 // ---- Claudeに頼む ----
 const ASKS=[
@@ -1293,6 +1309,8 @@ document.addEventListener('click',async e=>{
 document.addEventListener('click',e=>{const a=e.target.closest('[data-askcopy]');if(a){try{navigator.clipboard.writeText(a.dataset.askcopy);}catch(_){}}});
 document.addEventListener('change',async e=>{
   const s=e.target;
+  if(s.dataset&&s.dataset.space){const name=s.dataset.space;const inc=s.checked;const sp=(ui.spaces||[]).find(x=>x.name===name);if(sp)sp.excluded=!inc;
+    try{await api('/api/google/spaces',{method:'PATCH',body:JSON.stringify({name,excluded:!inc})});setStatus(inc?`「${sp?sp.title:name}」を取り込むようにしました。`:`「${sp?sp.title:name}」を取り込まないようにしました。まだ整理していない分も片づけました。`);}catch(err){setStatus(err.message,true);}return;}
   if(s.dataset&&s.dataset.move){const v=s.value;if(!v)return;const u=localUnit(s.dataset.move);
     const body=v==='none'?{scope:''}:{scope:v,period:periodKey(v,new Date())};
     try{await patch(u.id,body);setStatus(v==='none'?'「いつか」に移しました。':`${{day:'今日',week:'今週',month:'今月',year:'今年'}[v]}に移しました。`);await load();}catch(err){setStatus(err.message,true);}return;}
