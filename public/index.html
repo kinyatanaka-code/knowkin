@@ -908,7 +908,8 @@ function drawersFor(layerId){
       about:v.about.sort(byNew),with:v.with.sort(byNew),units:[...v.about.sort(byNew),...v.with.sort(byNew)]}));
     const orphan=all.filter(u=>layerOf(u)==='rel'&&!(u.people||[]).length);
     if(orphan.length)ds.push({key:'p:',label:'名前なし',units:orphan});
-    return [...ds.sort((a,b)=>(b.about.length-a.about.length)||(b.units.length-a.units.length)),...periDrawer(periRel).map(d=>({...d,label:'周辺の人'}))];
+    const al=d=>(d.about||[]).length;
+    return [...ds.sort((a,b)=>(al(b)-al(a))||(b.units.length-a.units.length)),...periDrawer(periRel).map(d=>({...d,label:'周辺の人'}))];
   }
   let list=all.filter(u=>layerOf(u)===layerId);
   const periList=every.filter(u=>isPeri(u)&&layerOf(u)===layerId);
