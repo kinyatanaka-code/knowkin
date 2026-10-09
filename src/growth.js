@@ -86,7 +86,7 @@ export async function rateQuiz(uid, id, rating, correction = '') {
 
 export async function requestQuiz(uid) { await pool.query('UPDATE users SET quiz_request_at = now() WHERE id = $1', [uid]); }
 
-/** テストを作るべきか：頼まれている、または今週まだ作っていない（記録が20件以上あるとき） */
+/** テストを作るべきか：いつでも答えられるよう、採点待ちが3問より少なければ補充する（記録が20件以上あるとき）。頼まれていれば必ず作る */
 export async function quizNeeded(uid) {
   const { rows } = await pool.query(
     `SELECT u.quiz_request_at,
@@ -95,8 +95,9 @@ export async function quizNeeded(uid) {
        (SELECT count(*)::int FROM brain_quiz WHERE user_id = u.id AND rating IS NULL) AS open
      FROM users u WHERE u.id = $1`, [uid]);
   const r = rows[0];
-  if (!r || r.open >= 3) return false;
-  return Boolean(r.quiz_request_at) || (r.n >= 20 && r.recent === 0);
+  if (!r) return false;
+  if (r.quiz_request_at) return true;
+  return r.n >= 20 && r.open < 3;
 }
 
 export async function quizMaterial(uid) {
@@ -121,4 +122,11 @@ export async function addQuiz(uid, items) {
   }
   await pool.query('UPDATE users SET quiz_request_at = NULL WHERE id = $1', [uid]);
   return n;
+}
+
+/** 採点待ちのテスト（チャットで出題する用） */
+export async function openQuiz(uid) {
+  const { rows } = await pool.query(
+    `SELECT id, question, prediction, basis FROM brain_quiz WHERE user_id = $1 AND rating IS NULL ORDER BY created_at LIMIT 10`, [uid]);
+  return rows;
 }

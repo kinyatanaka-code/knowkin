@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { addQuiz, getGrowth, quizMaterial, quizNeeded } from './growth.js';
+import { addQuiz, getGrowth, openQuiz, quizMaterial, quizNeeded, rateQuiz } from './growth.js';
 import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, setGoalNote } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
@@ -183,7 +183,7 @@ ${kTodo.includes(`kincall:daily:${y}`) ? `- 架電の要点（ref「kincall:dail
       up.drawers ? `\n\n## 引き出しの整理をしてください\n引き出しが決まっていない記憶が${up.drawers}件あります。get_units_without_drawer で読み、set_drawers で入れてください。` : '',
       up.core ? '\n\n## 核を育ててください\n（メモの整理と上の作業が終わったあと、最後に）get_core_material で材料を読み、本人の考え方の核をまとめ直して save_core で保存してください。' : '',
     ].join('');
-    const quizPart = kinPart + upPart + ((await quizNeeded(uid)) ? '\n\n## 再現度テストを作ってください\nget_quiz_material で材料を読み、「本人ならどう答えるか」を予想するテストを3問作って add_quiz で入れてください。' : '');
+    const quizPart = kinPart + upPart + ((await quizNeeded(uid)) ? '\n\n## 再現度テストを作ってください\n採点待ちのテストが3問より少なくなっています。get_quiz_material で材料を読み、「本人ならどう答えるか」を予想するテストを、採点待ちが3問になるように作って add_quiz で入れてください。' : '');
     const reqPart = quizPart + (reqs.length ? `\n\n## タスクづくりを頼まれている目的\n次の目的について、get_goal_context で材料を読み、これまでの知識をもとにタスクを作って add_goal_tasks で入れてください：${reqs.map((r) => `id ${r.id}「${r.title}」`).join('、')}` : '');
     if (!memos.length && !photos.length) return text(reqPart ? `未整理のメモはありません。${reqPart}` : '未整理のメモはありません。');
     const existing = await getDedupList(uid);
@@ -390,6 +390,29 @@ ${JSON.stringify(c.open)}`);
       '', '（周辺の情報は数に含めていない。採点はknowkinの「脳の成長」画面で行う）',
     ];
     return text(lines.join('\n'));
+  });
+
+  server.registerTool('get_open_quiz', {
+    title: '採点待ちの再現度テスト',
+    description: 'ユーザーが「テスト」とだけ言ったとき、または「再現度テストして」「どれくらい自分に近いか試して」と頼んだときに呼ぶ。採点待ちのテストを返すので、1問ずつ質問だけを出し（予想は答えを聞くまで見せない）、本人が答えたら予想と比べて、rate_quiz で本人の答えと採点を保存してから予想を見せること。採点待ちがなければ get_quiz_material と add_quiz で作ってから出題する。',
+    annotations: { readOnlyHint: true },
+  }, async () => {
+    const q = await openQuiz(uid);
+    if (!q.length) return text('採点待ちのテストはありません。get_quiz_material で材料を読み、add_quiz で3問作ってから出題してください。');
+    return text(`採点待ちのテスト（質問だけを1問ずつ出し、予想は本人が答えるまで見せないこと）\n${JSON.stringify(q)}`);
+  });
+
+  server.registerTool('rate_quiz', {
+    title: '再現度テストに答える',
+    description: 'チャットで出題した再現度テストに本人が答えたら呼ぶ。本人の答えと予想を比べ、rating を great（ほぼ同じ）/ ok（方向は合っているが違いがある）/ miss（違う）で付け、本人の答えを answer に入れる。本人の答えは新しい記録として残り、次の整理で記憶になる。本人が採点を言った場合はそれに従う。',
+    inputSchema: {
+      id: z.number().int(),
+      rating: z.enum(['great', 'ok', 'miss']),
+      answer: z.string().describe('本人の答え（なるべく本人の言葉のまま）'),
+    },
+  }, async ({ id, rating, answer }) => {
+    try { await rateQuiz(uid, id, rating, answer); return text('採点を保存しました。本人の答えは次の整理で記憶になります。'); }
+    catch (e) { return text(`保存できませんでした：${e.message}`); }
   });
 
   server.registerTool('get_quiz_material', {

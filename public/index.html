@@ -1218,7 +1218,9 @@ async function renderGrowth(p){
   ${g.quiz_open.length?g.quiz_open.map(q=>`<div class="quiz"><p class="q">Q. ${esc(q.question)}</p><p class="pred"><span>Claudeの予想</span>${esc(q.prediction)}</p>${q.basis?`<p class="basis">根拠：${esc(q.basis)}</p>`:''}
     ${pend&&pend.id===q.id?`<label class="field" style="margin:10px 0 8px"><span>${pend.rating==='miss'?'本当はどう考えますか？':'補足があれば（任意）'}</span><textarea id="qfix" class="vtext" style="min-height:80px"></textarea></label><div class="actions" style="justify-content:flex-start"><button class="primary" data-qsend="${q.id}">送る</button><button class="ghost" data-qcancel>やめる</button></div>`
     :`<div class="qbtns"><button data-qrate="${q.id}|great">◎ そのとおり</button><button data-qrate="${q.id}|ok">○ だいたい</button><button data-qrate="${q.id}|miss">△ 違う</button></div>`}</div>`).join('')
-    :`<p class="hint" style="margin:0 0 10px">今答えられるテストはありません。週に1回、整理のときにClaudeが3問作ります。</p><div class="actions" style="justify-content:flex-start"><button class="ghost" id="qreq">今週のテストを作ってもらう</button></div>`}
+    :`<p class="hint" style="margin:0 0 10px">今答えられるテストはありません。整理のたびに、Claudeが答えられるテストを3問までそろえます。</p>`}
+  <div class="actions" style="justify-content:flex-start;margin-top:4px"><a class="primary" href="${claudeUrl('テスト')}" target="_blank" rel="noopener" data-askcopy="テスト" style="text-decoration:none">Claudeとテストする</a><button class="ghost" id="qreq">次の整理で新しく作ってもらう</button></div>
+  <p class="hint" style="margin:6px 0 0">Claudeとの会話で「テスト」と送ると、その場で1問ずつ出題します。あなたが答えてから予想を見せるので、思った通りに答えてください。</p>
 
   <div class="gr-grid">
     <div class="gr-card"><p class="gr-lbl">量</p><p class="gr-num">${g.total}<small>件</small></p><p class="gr-sub">この1週間 +${g.last7}　8週間で +${grew}</p>${spark(wk,'#5CD2FF')}</div>
