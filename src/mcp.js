@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { addQuiz, getGrowth, openQuiz, quizMaterial, quizNeeded, rateQuiz } from './growth.js';
-import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, setGoalNote } from './goals.js';
+import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, renameMilestone, setGoalNote, updateGoal } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
   getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getGenres, getUnitsForRelevance, setRelevance, upkeepNeeds, markImported, getUnitsWithoutGenre, setGenres, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
@@ -297,6 +297,23 @@ ${JSON.stringify(units)}`);
     inputSchema: { goal_id: z.number().int().nullable(), unit_ids: z.array(z.number().int()).min(1).max(100) },
   }, async ({ goal_id: gid, unit_ids: ids }) => {
     try { return text(`${await linkUnits(uid, gid, ids)}件をつなぎました。`); } catch (e) { return text(`つなげませんでした：${e.message}`); }
+  });
+
+  server.registerTool('update_goal', {
+    title: '目的を書き換える',
+    description: 'ユーザーに頼まれて、目的の名前・叶えたい未来・達成の基準・期限・道のりの名前を変える。頼まれていない変更はしない。',
+    inputSchema: {
+      goal_id: z.number().int(),
+      title: z.string().optional(), future: z.string().optional(), criteria: z.string().optional(),
+      due: z.string().nullable().optional().describe('YYYY-MM-DD'),
+      milestones: z.array(z.object({ id: z.number().int(), title: z.string() })).optional().describe('名前を変える道のり'),
+    },
+  }, async ({ goal_id: gid, milestones, ...f }) => {
+    try {
+      await updateGoal(uid, gid, f);
+      for (const m of milestones || []) await renameMilestone(uid, gid, m.id, m.title);
+      return text('目的を書き換えました。');
+    } catch (e) { return text(`書き換えられませんでした：${e.message}`); }
   });
 
   server.registerTool('update_goal_position', {

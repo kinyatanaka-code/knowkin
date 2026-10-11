@@ -16,7 +16,7 @@ import {
 } from './auth.js';
 import { buildMcpServer } from './mcp.js';
 import { getGrowth, rateQuiz, requestQuiz } from './growth.js';
-import { addMilestone, requestTasks, setMilestone, snapshotGoals, updateGoal } from './goals.js';
+import { addMilestone, renameMilestone, requestTasks, setMilestone, snapshotGoals, updateGoal } from './goals.js';
 import { authUrl, googleEnabled, googleStatus, handleCallback, listSpaces, setSpaceExcluded, syncAll, syncUser, unlink } from './google.js';
 import { baseUrl, mcpUnauthorized, oauthRouter, revokeAllTokens, userIdFromAccessToken } from './oauth.js';
 
@@ -187,7 +187,11 @@ api.post('/goals/:id/milestones', wrap(async (req, res) => {
   try { await addMilestone(req.uid, Number(req.params.id), req.body?.title); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }
 }));
 api.patch('/goals/:id/milestones/:mid', wrap(async (req, res) => {
-  try { await setMilestone(req.uid, Number(req.params.id), Number(req.params.mid), Boolean(req.body?.done)); res.json({ ok: true }); } catch (e) { res.status(400).json({ error: e.message }); }
+  try {
+    if (typeof req.body?.title === 'string') await renameMilestone(req.uid, Number(req.params.id), Number(req.params.mid), req.body.title);
+    if (typeof req.body?.done === 'boolean') await setMilestone(req.uid, Number(req.params.id), Number(req.params.mid), req.body.done);
+    res.json({ ok: true });
+  } catch (e) { res.status(400).json({ error: e.message }); }
 }));
 api.patch('/categories/:id', wrap(async (req, res) => {
   const c = await updateCategory(req.uid, Number(req.params.id), req.body || {});

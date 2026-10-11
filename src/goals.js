@@ -188,3 +188,9 @@ export async function addGoalTasks(uid, goalId, tasks) {
   await pool.query('UPDATE goals SET task_request_at = NULL, last_activity_at = now() WHERE id = $1', [goalId]);
   return n;
 }
+
+export async function renameMilestone(uid, goalId, msId, title) {
+  await own(uid, goalId);
+  const t = s(title, 80); if (!t) throw new Error('道のりの名前が必要です');
+  await pool.query('UPDATE milestones SET title = $1 WHERE id = $2 AND goal_id = $3', [t, msId, goalId]);
+}

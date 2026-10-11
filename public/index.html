@@ -262,6 +262,7 @@ button{cursor:pointer}
 details summary{cursor:pointer;padding:8px 0}
 .newtag{margin-left:6px;font-size:11px;font-weight:500;color:var(--muted);border:1px solid var(--line);border-radius:999px;padding:0 6px}
 .orb.small{width:clamp(38px,5.5vw,50px);height:clamp(38px,5.5vw,50px)}
+.gedit{margin:4px 0 14px}.gedit summary{color:var(--cyan);font-size:14px}
 .pthumb{display:block;max-width:100%;max-height:260px;margin-top:12px;border-radius:10px;border:1px solid var(--line)}
 .photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
 .photo{margin:0;background:var(--surface);border:1px solid var(--line);border-radius:12px;overflow:hidden}
@@ -475,6 +476,14 @@ function renderGoal(p){
       ${g.criteria?`<p class="lbl">達成の基準</p><p>${esc(g.criteria)}</p>`:''}
       ${g.due?`<p class="lbl">期限</p><p>${esc(g.due)}</p>`:''}
     </div>
+    <details class="gedit"><summary>目的を編集する</summary>
+      <label class="field"><span>目的の名前</span><input id="ge-title" type="text" value="${esc(g.title)}"></label>
+      <label class="field"><span>叶えたい未来</span><textarea id="ge-future" class="vtext" style="min-height:70px">${esc(g.future||'')}</textarea></label>
+      <label class="field"><span>達成の基準</span><input id="ge-criteria" type="text" value="${esc(g.criteria||'')}"></label>
+      <label class="field"><span>期限</span><input id="ge-due" type="date" value="${esc(g.due||'')}"></label>
+      ${g.milestones.map(m=>`<label class="field"><span>道のり</span><input data-msedit="${m.id}" type="text" value="${esc(m.title)}"></label>`).join('')}
+      <div class="actions" style="justify-content:flex-start"><button class="primary" data-gsave="${g.id}">保存</button></div>
+    </details>
     ${gpathHTML(g)}
     <div class="sheet" style="margin-top:14px"><p class="hint" style="margin:0 0 6px">現在地${g.note_at?`（Claudeの見立て・${esc(new Date(g.note_at).toLocaleDateString('ja-JP',{timeZone:'Asia/Tokyo'}))}）`:''}</p>
       <p style="margin:0">${g.note?esc(g.note):`進み具合 ${g.progress}%。Claudeが整理するときに、つながった記憶から現在地を書きます。`}</p>${g.stalled?`<p class="status err" style="margin:6px 0 0">${g.idle_days}日動きがありません</p>`:''}</div>
@@ -1257,6 +1266,10 @@ document.addEventListener('click',async e=>{
     if(t.dataset.qsend){const pnd=ui.quizPending;const fix=$('qfix').value.trim();if(pnd.rating==='miss'&&!fix){setStatus('本当の考えを一言書いてください。それがknowkinの新しい記憶になります。',true);return;}
       await api(`/api/quiz/${t.dataset.qsend}/rate`,{method:'POST',body:JSON.stringify({rating:pnd.rating,correction:fix})});ui.quizPending=null;ui.growth=null;setStatus(fix?'採点しました。あなたの答えは新しい記録として残し、次の整理で記憶になります。':'採点しました。');render();return;}
     if(t.id==='qreq'){await api('/api/quiz/request',{method:'POST'});setStatus('依頼しました。次の整理のときにClaudeがテストを作ります。すぐ作るなら会話で「knowkinの再現度テストを作って」と頼んでください。');return;}
+    if(t.dataset.gsave){const id=t.dataset.gsave;const g=goalsAll().find(x=>x.id===Number(id));
+      await api('/api/goals/'+id,{method:'PATCH',body:JSON.stringify({title:$('ge-title').value,future:$('ge-future').value,criteria:$('ge-criteria').value,due:$('ge-due').value||null})});
+      for(const el of document.querySelectorAll('[data-msedit]')){const m=g.milestones.find(x=>x.id===Number(el.dataset.msedit));if(m&&el.value.trim()&&el.value.trim()!==m.title)await api(`/api/goals/${id}/milestones/${m.id}`,{method:'PATCH',body:JSON.stringify({title:el.value})});}
+      setStatus('目的を保存しました。');await load();return;}
     if(t.dataset.greqtasks){await api(`/api/goals/${t.dataset.greqtasks}/request-tasks`,{method:'POST'});setStatus('依頼しました。次の整理のときにClaudeがタスクを作ります。すぐ作るなら会話で「knowkinの目的からタスクを作って」と頼んでください。');await load();return;}
     if(t.dataset.gapprove){await api('/api/goals/'+t.dataset.gapprove,{method:'PATCH',body:JSON.stringify({status:'active'})});setStatus('目的にしました。ネットワークに星として現れます。');await load();return;}
     if(t.dataset.greject){const k='gr'+t.dataset.greject;if(ui.armed!==k){ui.armed=k;render();return;}ui.armed=null;await api('/api/goals/'+t.dataset.greject,{method:'PATCH',body:JSON.stringify({status:'dropped'})});setStatus('候補を見送りました。');await load();return;}
