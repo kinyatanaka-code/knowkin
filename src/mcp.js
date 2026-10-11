@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { addQuiz, getGrowth, openQuiz, quizMaterial, quizNeeded, rateQuiz } from './growth.js';
+import { getBriefing } from './briefing.js';
 import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, renameMilestone, setGoalNote, updateGoal } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
@@ -408,6 +409,12 @@ ${JSON.stringify(c.open)}`);
     ];
     return text(lines.join('\n'));
   });
+
+  server.registerTool('get_briefing', {
+    title: '相棒ブリーフィング',
+    description: '相棒として会話を始めるときに最初に呼ぶ。ユーザーが「相棒」「話そう」「壁打ちしよう」「相談乗って」と言ったときや、相棒用のプロジェクトで会話が始まったときに使う。本人の核・目的と現在地・今日のタスク・最近の出来事・未解決の問いと、最初に投げかける問いの候補を返す。',
+    annotations: { readOnlyHint: true },
+  }, async () => text(await getBriefing(uid)));
 
   server.registerTool('get_open_quiz', {
     title: '採点待ちの再現度テスト',
