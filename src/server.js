@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import express from 'express';
 import multer from 'multer';
 import cron from 'node-cron';
@@ -94,10 +95,18 @@ api.use((req, res, next) => {
   }).catch(next);
 });
 api.get('/state', wrap(async (req, res) => res.json({ ...(await getState(req.uid)), aiEnabled, user: req.user })));
-api.post('/memos', wrap(async (req, res) => {
-  const text = String(req.body?.text || '').trim();
+api.post('/memos', express.text({ type: 'text/*', limit: '2mb' }), wrap(async (req, res) => {
+  // ショートカットからは JSON {text, source:'voicememo'} か、本文そのもの（text/plain）で送れる
+  const body = typeof req.body === 'string' ? { text: req.body, source: 'voicememo' } : (req.body || {});
+  const text = String(body.text || '').trim();
   if (!text) return res.status(400).json({ error: '内容が空です' });
-  const source = req.body?.source === 'voice' ? 'voice' : 'text';
+  if (body.source === 'voicememo') {
+    // iPhoneのボイスメモの文字起こし：同じ内容を二度送っても1件にする
+    const ref = 'voicememo:' + crypto.createHash('sha1').update(text).digest('hex').slice(0, 20);
+    const r = await addMemo(req.uid, text, 'voice', null, ref);
+    return res.json({ ok: true, duplicate: Boolean(r?.duplicate), message: r?.duplicate ? 'このボイスメモはもう送られています' : 'knowkinに送りました' });
+  }
+  const source = body.source === 'voice' ? 'voice' : 'text';
   res.json(await addMemo(req.uid, text, source));
 }));
 api.post('/memos/:id/classify', wrap(async (req, res) => res.json(await classifyMemoById(req.uid, Number(req.params.id)))));

@@ -1161,6 +1161,9 @@ async function renderAccount(p){
     <p class="hint" style="margin:0 0 6px">「URLの内容を取得」で、URLに下のアドレス、ヘッダ Authorization に「Bearer 連携キー」を入れ、フォームの file に録音を付けて送ります。</p>
     <div class="copyrow"><input id="acc-voice" readonly value="${esc(a.voiceUrl)}" aria-label="送信先URL"><button class="ghost" data-copy="acc-voice">コピー</button></div>
     <div class="copyrow"><input id="acc-key" readonly value="Bearer ${esc(a.key)}" aria-label="Authorization"><button class="ghost" data-copy="acc-key">コピー</button></div>
+    <h4>ボイスメモの文字起こしを送る</h4>
+    <p class="hint" style="margin:0 0 6px">iPhoneのボイスメモで文字起こしをコピーしてからショートカットを動かすと、未整理のメモとして入ります。「URLの内容を取得」で、URLに下のアドレス、方法は POST、ヘッダ Authorization に上と同じ「Bearer 連携キー」、本文は JSON で text にクリップボード、source に voicememo を入れます。同じ内容を二度送っても1件になります。</p>
+    <div class="copyrow"><input id="acc-memo" readonly value="${esc(location.origin+'/api/memos')}" aria-label="文字起こしの送信先URL"><button class="ghost" data-copy="acc-memo">コピー</button></div>
     <div class="actions" style="justify-content:flex-start"><button class="ghost" id="rotate">連携キーを作り直す</button></div>
   </div>
   <h4>Gmail・Googleチャット</h4>
