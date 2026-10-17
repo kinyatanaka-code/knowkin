@@ -316,6 +316,75 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
 .copyrow{display:flex;gap:8px;align-items:center;margin:4px 0 14px}
 .copyrow input{flex:1;min-width:0;padding:9px 12px;border:1px solid var(--line);border-radius:10px;background:var(--bg2);font-size:13px}
 @media (prefers-reduced-motion:reduce){.node{transition:none}}
+
+/* ---- 行動：タスク（日めくり） ---- */
+.actview{--ember:#C2691A;--dusk:#4F5D95;--duskSoft:#ECEEF7}
+.actview .av-top{padding:10px 16px}.actview .av-top h1{font-size:18px}
+.tk-hero{display:grid;grid-template-columns:36px 1fr 36px;align-items:center;gap:4px 8px;margin:12px 0 10px;padding:10px 10px 10px;border-radius:20px;background:var(--soft)}
+.tk-hero.someday{grid-template-columns:1fr}
+.tk-nav{width:36px;height:36px;border-radius:50%;border:0;background:#fff;color:var(--g);font-size:22px;line-height:1}
+.tk-date{display:flex;align-items:center;justify-content:center;gap:12px}
+.tk-date b{font-size:54px;line-height:.9;font-weight:800;color:var(--g);font-feature-settings:"tnum";letter-spacing:-.02em}
+.tk-date span{display:flex;flex-direction:column;gap:2px}.tk-date em{font-style:normal;font-size:15px;font-weight:700;color:var(--ink)}.tk-date em+em{font-size:13px;font-weight:500;color:var(--muted)}
+.tk-prog{grid-column:1/-1;display:flex;align-items:center;gap:10px;margin-top:4px;padding:0 4px}
+.tk-count{font-size:20px;font-weight:800;color:var(--g);white-space:nowrap}.tk-count small{font-size:12px;font-weight:500;color:var(--muted);margin-left:2px}.tk-count.none{font-size:13px;font-weight:500;color:var(--muted)}
+.tk-bar{flex:1;height:8px;border-radius:999px;background:#fff;overflow:hidden}.tk-bar i{display:block;height:100%;background:var(--g);border-radius:999px;transition:width .3s}
+.tk-back{flex:none;border:0;background:#fff;color:var(--g);border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700}
+.tk-scope{display:flex;gap:4px;margin:0 0 12px;overflow-x:auto}
+.tk-scope button{flex:1;min-width:52px;border:0;background:none;padding:8px 4px;border-radius:999px;font-size:14px;color:var(--muted);font-weight:500}
+.tk-scope button[aria-selected="true"]{background:var(--ink);color:#fff;font-weight:700}
+.tk-filter{display:flex;align-items:center;gap:8px;margin:0 0 10px;padding:8px 12px;border-radius:12px;background:var(--soft);color:var(--g);font-size:13px;font-weight:700}
+.tk-filter button{margin-left:auto;border:0;background:#fff;color:var(--g);border-radius:999px;padding:3px 10px;font-size:12px}
+.tk-add{display:flex;align-items:center;gap:6px;margin:0 0 6px;padding:5px 5px 5px 14px;border:1.5px solid var(--line);border-radius:16px;background:#fff}
+.tk-add:focus-within{border-color:var(--g)}
+.tk-add input{flex:1;min-width:0;border:0!important;background:none!important;padding:8px 0!important;font-size:16px;box-shadow:none!important;outline:none}
+.tk-area{flex:none;border:0;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:700}
+.tk-area.work{background:var(--soft);color:var(--g)}.tk-area.life{background:var(--duskSoft);color:var(--dusk)}
+.tk-plus{flex:none;width:38px;height:38px;border:0;border-radius:12px;background:var(--g);color:#fff;font-size:22px;line-height:1}
+.tk-group{margin-top:18px}
+.tk-group h3{display:flex;align-items:center;gap:8px;margin:0 0 2px;font-size:13px;font-weight:700;color:var(--muted)}
+.tk-group h3::before{content:'';width:8px;height:8px;border-radius:50%;background:var(--g)}
+.tk-group.life h3::before{background:var(--dusk)}.tk-group.late h3{color:var(--ember)}.tk-group.late h3::before{background:var(--ember)}
+.tk-group.week h3::before{background:transparent;border:2px solid var(--g);width:6px;height:6px}
+.tk-group h3 span{font-weight:500}
+.tk-group ul,.tk-done ul,.tk-goals ul{list-style:none;margin:0;padding:0}
+.tk-row{display:grid;grid-template-columns:44px 1fr auto;align-items:start;border-bottom:1px solid var(--line)}
+.tk-check{width:44px;height:48px;border:0;background:none;display:flex;align-items:center;justify-content:center;padding:0}
+.tk-check span{width:22px;height:22px;border-radius:50%;border:2px solid #B9CDC1;transition:background .2s,border-color .2s}
+.tk-group.life .tk-check span{border-color:#C3C8E0}
+.tk-row.done .tk-check span,.tk-row.ticking .tk-check span{background:var(--g);border-color:var(--g);box-shadow:inset 0 0 0 4px #fff}
+.tk-row.ticking .tk-title{text-decoration:line-through;color:var(--muted);transition:color .2s}
+.tk-main{display:flex;flex-direction:column;gap:3px;min-width:0;text-align:left;background:none;border:0;padding:13px 4px 12px 0;color:var(--ink)}
+.tk-title{font-size:16px;line-height:1.45;word-break:break-word}
+.tk-row.done .tk-title{text-decoration:line-through;color:var(--muted)}
+.tk-sub{display:flex;flex-wrap:wrap;gap:4px 10px;font-size:12px;color:var(--muted)}
+.tk-goal{color:var(--g)}.tk-group.life .tk-goal{color:var(--dusk)}
+.tk-prop{color:var(--g);background:var(--soft);border-radius:999px;padding:0 7px}
+.tk-when{padding:14px 2px 0 6px;font-size:12px;color:var(--muted);white-space:nowrap;font-feature-settings:"tnum"}
+.tk-when.late{color:var(--ember);font-weight:700}
+.tk-tray{grid-column:2/-1;padding:0 0 12px}
+.tk-reason{margin:0 0 8px;font-size:12px;color:var(--muted);line-height:1.5}
+.tk-label{margin:0 0 6px;font-size:12px;color:var(--muted)}
+.tk-chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 8px}
+.tk-chips button{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font-size:13px;color:var(--ink)}
+.tk-chips button:active{background:var(--soft)}
+.tk-chips button[aria-pressed="true"]{background:var(--g);border-color:var(--g);color:#fff;font-weight:700}
+.tk-chips .tk-del{color:var(--ember);border-color:transparent;margin-left:auto}.tk-chips .tk-del.armed{background:var(--ember);color:#fff}
+.tk-empty{margin:18px 0 0;padding:16px;border-radius:14px;border:1.5px dashed var(--line);color:var(--muted);font-size:14px;text-align:center}
+.tk-done{margin-top:16px}.tk-done summary{font-size:13px;color:var(--muted);padding:6px 0;cursor:pointer}
+.tk-goals{margin-top:30px;padding-top:6px;border-top:6px solid var(--bg2)}
+.tk-gh{display:flex;justify-content:space-between;align-items:baseline;margin:12px 0 4px}.tk-gh h2{margin:0;font-size:15px;color:var(--ink)}
+.tk-grow{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)}
+.tk-gmain{flex:1;min-width:0;display:grid;gap:6px;text-align:left;background:none;border:0;padding:12px 0;color:var(--ink)}
+.tk-grow.sel .tk-gmain .tk-gtitle{color:var(--g)}
+.tk-gtitle{font-size:15px;font-weight:700}
+.tk-gbar{height:6px;border-radius:999px;background:var(--bg2);overflow:hidden}.tk-gbar i{display:block;height:100%;background:var(--g)}
+.tk-grow.life .tk-gbar i{background:var(--dusk)}
+.tk-gmeta{font-size:12px;color:var(--muted)}.tk-gmeta b{color:var(--ember);font-weight:700;margin-left:8px}
+.tk-gmore{flex:none;border:0;background:var(--bg2);color:var(--g);border-radius:999px;padding:5px 11px;font-size:12px}
+.tk-grow.sel{background:linear-gradient(90deg,var(--soft),transparent);margin:0 -16px;padding:0 16px}
+.tk-ghint{font-size:12px;color:var(--muted);margin:8px 0 0}
+@media (prefers-reduced-motion:reduce){.tk-bar i,.tk-check span{transition:none}}
 </style>
 </head>
 <body>
@@ -978,51 +1047,94 @@ function effRange(u){ // タスクのやる時期を日付の範囲にする
   if(u.due)return [u.due,u.due];
   return null;
 }
-const SCOPE_LBL={day:'日',week:'週',month:'月',year:'年'};
-function taskRowHTML(u){
-  const g=u.goal_id&&goalsAll().find(x=>x.id===u.goal_id);
-  const when=!u.scope&&!u.due?'いつか':u.scope?({day:'日',week:'週',month:'月',year:'年'}[u.scope]):'期限';
-  return `<li class="trow${u.done?' done':''}"><input type="checkbox" class="check" data-done="${u.id}" ${u.done?'checked':''} aria-label="完了にする">
-    <div class="body"><p class="content">${esc(u.content)}</p>
-    ${(u.tags||[]).includes('提案')&&!u.reviewed?`<p class="tprop">Claudeの提案${u.reason?`：${esc(u.reason)}`:''}</p>`:''}
-    <div class="meta"><span class="abadge ${areaOf(u)}">${areaOf(u)==='life'?'プライベート':'仕事'}</span>${u.due?`<span>期限 ${esc(u.due)}</span>`:''}${g?`<span class="goaltag" style="margin:0">★ ${esc(g.title)}</span>`:''}${(u.people||[]).length?`<span>${esc(u.people.join('、'))}</span>`:''}</div>
-    <div class="row-actions"><select data-move="${u.id}" aria-label="やる時期">
-      <option value="">時期：${when}</option><option value="day">今日にやる</option><option value="week">今週にやる</option><option value="month">今月にやる</option><option value="year">今年にやる</option><option value="none">いつか</option></select>
-      <button data-area="${u.id}">${areaOf(u)==='life'?'仕事にする':'プライベートにする'}</button></div></div></li>`;
+const SCOPE_LBL={day:'今日',week:'今週',month:'今月',year:'今年',someday:'いつか'};
+const WD='日月火水木金土';
+const md=s=>{const [,m,d]=s.split('-').map(Number);return `${m}/${d}`;};
+function taskWhen(u,today){ // 行の右に出す、いつやるか
+  if(u.due){if(u.due<today)return {t:md(u.due),late:true};if(u.due===today)return {t:'今日'};return {t:md(u.due)};}
+  if(u.scope==='week')return {t:'今週'};if(u.scope==='month')return {t:'今月'};if(u.scope==='year')return {t:'今年'};
+  return null;
 }
-function renderTasks(p,{embedded=false}={}){
-  const sc=ui.tscope||'day';const d=ui.tdate||new Date();const key=periodKey(sc,d);const [vs,ve]=rangeOf(sc,key);
-  const af=ui.tarea||'all';const isCur=key===periodKey(sc,new Date());
+function taskRowHTML(u,today){
+  const g=u.goal_id&&goalsAll().find(x=>x.id===u.goal_id);
+  let w=taskWhen(u,today);const open=ui.topen===u.id;
+  const sc=ui.tscope||'day';if(w&&!w.late&&((sc==='day'&&(w.t==='今日'||w.t==='今週'))||(sc==='week'&&w.t==='今週')||(sc==='month'&&w.t==='今月')||(sc==='year'&&w.t==='今年')))w=null;
+  const tdy=ymd(new Date()),tmr=ymd(shiftDate('day',new Date(),1));
+  const curWhen=!u.scope&&!u.due?'none':u.scope==='day'&&u.period===tdy?'today':u.scope==='day'&&u.period===tmr?'tomorrow':u.scope==='week'?'week':u.scope==='month'?'month':'';
+  const prop=(u.tags||[]).includes('提案')&&!u.reviewed;
+  const sub=[g?`<span class="tk-goal">★ ${esc(g.title)}</span>`:'',(u.people||[]).length?`<span>${esc(u.people.join('、'))}</span>`:'',prop?'<span class="tk-prop">Claudeの提案</span>':''].filter(Boolean).join('');
+  return `<li class="tk-row${u.done?' done':''}${open?' open':''}${w&&w.late&&!u.done?' late':''}">
+    <button type="button" class="tk-check" data-tdone="${u.id}" aria-pressed="${!!u.done}" aria-label="${u.done?'未完了に戻す':'完了にする'}"><span></span></button>
+    <button type="button" class="tk-main" data-topen="${u.id}" aria-expanded="${open}">
+      <span class="tk-title">${esc(u.content)}</span>${sub?`<span class="tk-sub">${sub}</span>`:''}
+    </button>
+    ${w?`<span class="tk-when${w.late?' late':''}">${esc(w.t)}</span>`:''}
+    ${open?`<div class="tk-tray">
+      ${prop&&u.reason?`<p class="tk-reason">${esc(u.reason)}</p>`:''}
+      <p class="tk-label">いつやる</p>
+      <div class="tk-chips">${[['today','今日'],['tomorrow','明日'],['week','今週'],['month','今月'],['none','いつか']].map(([k,l])=>`<button type="button" data-twhen="${u.id}|${k}" aria-pressed="${curWhen===k}">${l}</button>`).join('')}</div>
+      <div class="tk-chips"><button type="button" data-area="${u.id}">${areaOf(u)==='life'?'仕事に移す':'プライベートに移す'}</button>${g?`<button type="button" data-actgoal="${g.id}">目的を見る</button>`:''}<button type="button" class="tk-del${ui.armed===String(u.id)?' armed':''}" data-del="${u.id}">${ui.armed===String(u.id)?'もう一度押すと削除':'削除'}</button></div>
+    </div>`:''}
+  </li>`;
+}
+function taskGroup(title,list,today,cls=''){
+  if(!list.length)return '';
+  return `<section class="tk-group ${cls}"><h3>${title}<span>${list.length}</span></h3><ul>${list.map(u=>taskRowHTML(u,today)).join('')}</ul></section>`;
+}
+function renderTasks(p){
+  const sc=ui.tscope||'day';const d=ui.tdate||new Date();const today=ymd(new Date());
   const gsel=ui.tgoal&&goalsAll().find(g=>g.id===ui.tgoal);if(!gsel)ui.tgoal=null;
-  const tasks=state.units.filter(isTask).filter(u=>af==='all'||areaOf(u)===af).filter(u=>!ui.tgoal||u.goal_id===ui.tgoal);
-  const inView=[],carry=[],someday=[];
-  for(const u of tasks){const r=effRange(u);
-    if(!r){if(!u.done)someday.push(u);continue;}
-    if(r[0]>=vs&&r[0]<=ve)inView.push(u); // 期間をまたぐ週は、はじまりの日の月・年に入れる
-    else if(isCur&&!u.done&&r[1]<vs)carry.push(u);}
-  const byDue=(a,b)=>String(a.due||'9999').localeCompare(String(b.due||'9999'));
+  const all=state.units.filter(isTask).filter(u=>!ui.tgoal||u.goal_id===ui.tgoal);
+  const byDue=(a,b)=>String(a.due||'9999').localeCompare(String(b.due||'9999'))||String(a.created_at).localeCompare(String(b.created_at));
+  let inView=[],carry=[],week=[],isCur=true,vs='',ve='';
+  if(sc==='someday'){inView=all.filter(u=>!effRange(u));}
+  else{
+    const key=periodKey(sc,d);[vs,ve]=rangeOf(sc,key);isCur=key===periodKey(sc,new Date());
+    const wk=periodKey('week',new Date());
+    for(const u of all){const r=effRange(u);if(!r)continue;
+      if(r[0]>=vs&&r[0]<=ve&&!(sc==='day'&&u.scope==='week'))inView.push(u);
+      else if(isCur&&!u.done&&r[1]<vs)carry.push(u);
+      else if(sc==='day'&&isCur&&u.scope==='week'&&u.period===wk)week.push(u);}
+  }
   const open=inView.filter(u=>!u.done).sort(byDue),done=inView.filter(u=>u.done);
-  const n=a=>state.units.filter(isTask).filter(u=>{if(u.done||areaOf(u)!==a)return false;const r=effRange(u);return r&&r[0]>=vs&&r[0]<=ve;}).length;
+  const work=open.filter(u=>areaOf(u)==='work'),life=open.filter(u=>areaOf(u)==='life');
   const tot=open.length+done.length;const pct=tot?Math.round(done.length/tot*100):0;
-  p.innerHTML=`${embedded?'':`<h2>行動</h2><p class="lead">タスクを、年・月・週・日と、仕事・プライベートで分けて管理します。</p>`}
-  <div class="seg" role="tablist" aria-label="期間">${['day','week','month','year'].map(s=>`<button role="tab" data-tscope="${s}" aria-selected="${sc===s}">${SCOPE_LBL[s]}</button>`).join('')}</div>
-  <div class="seg sub" role="tablist" aria-label="分野"><button role="tab" data-tarea="all" aria-selected="${af==='all'}">すべて</button><button role="tab" data-tarea="work" aria-selected="${af==='work'}">仕事 ${n('work')}</button><button role="tab" data-tarea="life" aria-selected="${af==='life'}">プライベート ${n('life')}</button></div>
-  ${gsel?`<div class="gfilter">★ ${esc(gsel.title)} のタスクだけ<button type="button" class="linkbtn" data-tgoal="${gsel.id}">解除</button></div>`:''}
-  <div class="pnav"><button type="button" data-tshift="-1" aria-label="前へ">‹</button><span>${periodTitle(sc,d)}</span><button type="button" data-tshift="1" aria-label="次へ">›</button>${isCur?'':'<button type="button" class="linkbtn" data-tshift="0">今に戻る</button>'}${tot?`<em class="pcount">${done.length} / ${tot} 完了</em>`:''}</div>
-  ${tot?`<div class="tbar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="この期間の完了"><span style="width:${pct}%"></span></div>`:''}
-  <div class="tadd"><input id="t-new" type="text" placeholder="${{day:'今日',week:'この週',month:'この月',year:'この年'}[sc]}にやることを足す" aria-label="タスクを足す"><select id="t-area" aria-label="分野"><option value="work"${af==='life'?'':' selected'}>仕事</option><option value="life"${af==='life'?' selected':''}>プライベート</option></select><button class="primary" type="button" id="t-add">追加</button></div>
-  ${carry.length?`<h4>持ち越し <span class="warn">${carry.length}</span></h4><ul class="list">${carry.sort(byDue).map(taskRowHTML).join('')}</ul>`:''}
-  <h4>${periodTitle(sc,d)}のタスク <span class="muted">${open.length}</span></h4>
-  ${open.length?`<ul class="list">${open.map(taskRowHTML).join('')}</ul>`:`<p class="empty" style="padding:10px 0">この期間のタスクはありません。</p>`}
-  ${done.length?`<details><summary>終わったもの ${done.length}件</summary><ul class="list">${done.map(taskRowHTML).join('')}</ul></details>`:''}
-  ${someday.length?`<details${isCur&&sc==='year'?' open':''}><summary>いつか（時期が決まっていない） ${someday.length}件</summary><ul class="list">${someday.map(taskRowHTML).join('')}</ul></details>`:''}`;
-  $('t-new').addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing)addTaskUI();});
+  // 日めくり：期間の見出し
+  let big,small1,small2;
+  if(sc==='day'){big=d.getDate();small1=`${d.getMonth()+1}月`;small2=`${WD[d.getDay()]}曜日${isCur?'・今日':''}`;}
+  else if(sc==='week'){const [a,b]=[vs,ve].map(fromYmd);big=`${a.getDate()}`;small1=`${a.getMonth()+1}月${a.getDate()}日から`;small2=`${b.getMonth()+1}月${b.getDate()}日まで${isCur?'・今週':''}`;}
+  else if(sc==='month'){big=d.getMonth()+1;small1=`${d.getFullYear()}年`;small2=`${isCur?'今月':'月'}`;}
+  else if(sc==='year'){big=String(d.getFullYear()).slice(2);small1=`${d.getFullYear()}年`;small2=isCur?'今年':'';}
+  else{big='∞';small1='いつか';small2='時期を決めていないこと';}
+  const ph=sc==='someday'?'いつかやることを足す':`${{day:isCur?'今日':'この日',week:'この週',month:'この月',year:'この年'}[sc]}にやることを足す`;
+  const ta=ui.tnewArea||'work';
+  p.innerHTML=`<div class="tk-hero${sc==='someday'?' someday':''}">
+    ${sc==='someday'?'':`<button type="button" class="tk-nav" data-tshift="-1" aria-label="前へ">‹</button>`}
+    <div class="tk-date"><b>${big}</b><span><em>${small1}</em><em>${small2}</em></span></div>
+    ${sc==='someday'?'':`<button type="button" class="tk-nav" data-tshift="1" aria-label="次へ">›</button>`}
+    <div class="tk-prog">${tot?`<span class="tk-count">${done.length}<small>/${tot} 完了</small></span><span class="tk-bar" role="progressbar" aria-valuenow="${pct}" aria-valuemin="0" aria-valuemax="100" aria-label="完了の割合"><i style="width:${pct}%"></i></span>`:'<span class="tk-count none">まだ何もありません</span>'}
+    ${!isCur&&sc!=='someday'?'<button type="button" class="tk-back" data-tshift="0">今に戻る</button>':''}</div>
+  </div>
+  <div class="tk-scope" role="tablist" aria-label="期間">${['day','week','month','year','someday'].map(s=>`<button role="tab" data-tscope="${s}" aria-selected="${sc===s}">${SCOPE_LBL[s]}</button>`).join('')}</div>
+  ${gsel?`<div class="tk-filter">★ ${esc(gsel.title)} のタスクだけ表示中<button type="button" data-tgoal="${gsel.id}">解除</button></div>`:''}
+  <div class="tk-add"><input id="t-new" type="text" placeholder="${ph}" aria-label="タスクを足す" enterkeyhint="done">
+    <button type="button" class="tk-area ${ta}" data-tnewarea aria-label="分野を切り替える">${ta==='life'?'プライベート':'仕事'}</button>
+    <button type="button" class="tk-plus" id="t-add" aria-label="追加">＋</button></div>
+  ${taskGroup('期限切れ・持ち越し',carry.sort(byDue),today,'late')}
+  ${ui.tgoal?taskGroup('やること',open,today):taskGroup('仕事',work,today,'work')+taskGroup('プライベート',life,today,'life')}
+  ${!tot&&!carry.length&&!week.length?`<p class="tk-empty">${sc==='someday'?'時期を決めていないことはありません。':'この期間にやることはまだありません。上の欄から足せます。'}</p>`:''}
+  ${taskGroup('今週のうちに',week.filter(u=>!u.done).sort(byDue),today,'week')}
+  ${done.length?`<details class="tk-done"><summary>終わったこと ${done.length}</summary><ul>${done.map(u=>taskRowHTML(u,today)).join('')}</ul></details>`:''}`;
+  const inp=$('t-new');if(inp)inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing){e.preventDefault();addTaskUI();}});
 }
 async function addTaskUI(){
   const v=$('t-new').value.trim();if(!v){setStatus('タスクの内容を入れてください。',true);return;}
   const sc=ui.tscope||'day';const d=ui.tdate||new Date();
-  await api('/api/tasks',{method:'POST',body:JSON.stringify({content:v,area:$('t-area').value,scope:sc,period:periodKey(sc,d),goal_id:ui.tgoal||null})});
+  const body={content:v,area:ui.tnewArea||'work',goal_id:ui.tgoal||null};
+  if(sc!=='someday'){body.scope=sc;body.period=periodKey(sc,d);}
+  await api('/api/tasks',{method:'POST',body:JSON.stringify(body)});
   setStatus(ui.tgoal?'タスクを足して、目的につなぎました。':'タスクを足しました。');await load();
+  const inp=$('t-new');if(inp)inp.focus();
 }
 
 // ---- 行動の画面（全画面・白と緑） ----
@@ -1041,29 +1153,31 @@ function closeAct(fromPop){
   render();
 }
 window.addEventListener('popstate',()=>{if(ui.actOpen)closeAct(true);});
-function actGoalCard(g){
-  const d=g.milestones.filter(m=>m.done).length;const sel=ui.tgoal===g.id;
-  return `<div class="agc${sel?' sel':''}${g.area==='life'?' life':''}"><button type="button" class="agc-main" data-tgoal="${g.id}" aria-pressed="${sel}">
-    <span class="agc-top"><span class="agc-star" aria-hidden="true"></span>${g.area==='life'?'プライベート':'仕事'}${g.due?`・${esc(g.due.slice(5).replace('-','/'))}まで`:''}${g.stalled?`<span class="agc-stall">${g.idle_days}日動きなし</span>`:''}<b class="agc-pct">${g.progress}%</b></span>
-    <span class="agc-title">${esc(g.title)}</span>${gpathHTML(g)}
-    <span class="agc-now"><b>今ここ</b> ${g.milestones.length?`道のり ${d}/${g.milestones.length}・`:''}タスク ${g.tasks_done}/${g.tasks_total}</span></button>
-    <span class="agc-foot">${g.task_request_at?'<span class="agc-req">タスクづくり依頼中</span>':`<button type="button" class="agc-gen" data-greqtasks="${g.id}">＋ 知識からタスクを作る</button>`}<button type="button" class="agc-more" data-actgoal="${g.id}">詳しく ›</button></span></div>`;
+function actGoalRow(g){
+  const sel=ui.tgoal===g.id;const open=g.tasks_total-g.tasks_done;
+  return `<li class="tk-grow${sel?' sel':''}${g.area==='life'?' life':''}">
+    <button type="button" class="tk-gmain" data-tgoal="${g.id}" aria-pressed="${sel}">
+      <span class="tk-gtitle">${esc(g.title)}</span>
+      <span class="tk-gbar"><i style="width:${g.progress}%"></i></span>
+      <span class="tk-gmeta">${g.progress}%${g.due?`・${esc(md(g.due))}まで`:''}${open>0?`・残りのタスク ${open}`:''}${g.stalled?`<b>${g.idle_days}日動きなし</b>`:''}</span>
+    </button>
+    <button type="button" class="tk-gmore" data-actgoal="${g.id}" aria-label="${esc(g.title)}を詳しく見る">詳しく</button>
+  </li>`;
 }
 function renderActView(){
-  const v=$('actview');const d=new Date();
+  const v=$('actview');
   const act=goalsAll().filter(g=>g.status==='active').slice().sort((a,b)=>(b.pinned-a.pinned)||String(a.due||'9999').localeCompare(String(b.due||'9999')));
   const c=goalCands();
-  v.innerHTML=`<header class="av-top"><button type="button" class="av-back" data-actclose aria-label="脳に戻る">‹</button><span class="av-orb" aria-hidden="true"></span><h1>行動</h1><span class="av-date">${d.getMonth()+1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）</span></header>
+  v.innerHTML=`<header class="av-top"><button type="button" class="av-back" data-actclose aria-label="脳に戻る">‹</button><h1>行動</h1></header>
   <main class="av-body">
-    <section><div class="av-sh"><h2>目的</h2><button type="button" class="linkbtn" data-actgoals>すべて見る</button></div>
+    <div id="av-tasks"></div>
+    <section class="tk-goals"><div class="tk-gh"><h2>目的</h2><button type="button" class="linkbtn" data-actgoals>すべて見る</button></div>
       ${c.map(g=>`<div class="av-cand"><span aria-hidden="true">★</span><span><small>目的の候補</small><br><b>${esc(g.title)}</b></span><button type="button" data-gapprove="${g.id}">目的にする</button></div>`).join('')}
-      ${act.length?`<div class="av-goals">${act.map(actGoalCard).join('')}</div>`:`<p class="av-empty">進行中の目的はまだありません。やりたいことを記録すると、Claudeが候補を出します。</p>`}
+      ${act.length?`<ul>${act.map(actGoalRow).join('')}</ul><p class="tk-ghint">目的を押すと、その目的のタスクだけになります。</p>`:`<p class="av-empty">進行中の目的はまだありません。やりたいことを記録すると、Claudeが候補を出します。</p>`}
     </section>
-    <section><div class="av-sh"><h2>ToDo</h2></div><div id="av-tasks"></div></section>
   </main>
   <nav class="av-tab" aria-label="画面の切り替え"><button type="button" data-acttab="brain"><span></span>脳</button><button type="button" class="on" aria-current="page"><span></span>行動</button><button type="button" data-acttab="rec"><span></span>記録</button><button type="button" data-acttab="review"><span></span>見直し</button><button type="button" data-acttab="ask"><span></span>頼む</button></nav>`;
-  renderTasks($('av-tasks'),{embedded:true});
-  const inp=$('t-new');if(inp)inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.isComposing)addTaskUI();});
+  renderTasks($('av-tasks'));
 }
 
 function renderLayer(p){
@@ -1143,6 +1257,16 @@ function spacesHTML(){
   if(!s.length)return '<p class="hint" style="margin:0">まだスペースがありません。一度取り込むと一覧に出ます。</p>';
   return `<ul class="spaces">${s.map(x=>`<li><label><input type="checkbox" data-space="${esc(x.name)}" ${x.excluded?'':'checked'}><span>${esc(x.title||x.name)}</span><small>${x.msg_count}件</small></label></li>`).join('')}</ul>`;
 }
+async function loadLine(code){
+  const el=$('linebox');if(!el)return;
+  let s;try{s=await api('/api/line/status');}catch(_){el.innerHTML='<p class="hint">LINEの状態を読み込めませんでした。</p>';return;}
+  if(!s.enabled){el.innerHTML='<p class="hint" style="margin:0">LINE連携はまだ設定されていません。LINE公式アカウントを作り、RailwayのVariablesに LINE_CHANNEL_SECRET と LINE_CHANNEL_ACCESS_TOKEN を入れると使えます。</p>';return;}
+  el.innerHTML=s.linked
+    ?`<p class="hint" style="margin:0 0 6px">LINEとつながっています。knowkinのLINEに送ったメッセージや写真は、未整理のメモに入ります。「タスク」と送ると今日・今週のタスクが返ってきます。</p><div class="actions" style="justify-content:flex-start"><button class="ghost" id="lineunlink">LINEの連携を解除</button></div>`
+    :`<p class="hint" style="margin:0 0 6px">${s.addUrl?`<a href="${esc(s.addUrl)}" target="_blank" rel="noopener">knowkinのLINE</a>を友だち追加し、`:'knowkinのLINEを友だち追加し、'}下のボタンで出た6桁の数字をLINEで送るとつながります（15分有効）。</p>
+      ${code?`<p style="font-size:28px;font-weight:700;letter-spacing:.2em;margin:4px 0 8px">${esc(code)}</p>`:''}
+      <div class="actions" style="justify-content:flex-start"><button class="ghost" id="linecode">LINEの連携コードを出す</button></div>`;
+}
 async function loadSpaces(){try{ui.spaces=await api('/api/google/spaces');}catch(_){ui.spaces=[];}const el=$('spaces');if(el)el.innerHTML=spacesHTML();}
 async function renderAccount(p){
   p.innerHTML=`<h2>アカウント</h2><p class="lead">読み込んでいます…</p>`;
@@ -1166,6 +1290,8 @@ async function renderAccount(p){
     <div class="copyrow"><input id="acc-memo" readonly value="${esc(location.origin+'/api/memos')}" aria-label="文字起こしの送信先URL"><button class="ghost" data-copy="acc-memo">コピー</button></div>
     <div class="actions" style="justify-content:flex-start"><button class="ghost" id="rotate">連携キーを作り直す</button></div>
   </div>
+  <h4>LINE</h4>
+  <div id="linebox"><p class="hint">読み込んでいます…</p></div>
   <h4>Gmail・Googleチャット</h4>
   <div class="sheet">${googleHTML(a.google||{})}</div>
   <h4>パスワードを変える</h4>
@@ -1176,6 +1302,7 @@ async function renderAccount(p){
   </div>
   <div class="actions" style="justify-content:flex-start;margin-top:18px"><button class="ghost" id="logout">ログアウト</button></div>`;
   if(a.google&&a.google.linked&&!ui.spaces)loadSpaces();
+  loadLine();
 }
 // ---- Claudeに頼む ----
 const ASKS=[
@@ -1263,6 +1390,8 @@ document.addEventListener('click',async e=>{
     if(t.id==='pwBtn'){try{await api('/api/account/password',{method:'POST',body:JSON.stringify({current:$('pw-cur').value,next:$('pw-new').value})});authMode='login';showLogin('パスワードを変えました。新しいパスワードでログインしてください。');}catch(err){setStatus(err.message,true);}return;}
     if(t.dataset.goal){if((recorder&&recorder.state==='recording')||live||prog){setStatus('録音・アップロードの処理中です。',true);return;}ui.view='goal';ui.goal=Number(t.dataset.goal);ui.armed=null;setStatus('');render();$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.dataset.rel){const [id,v]=t.dataset.rel.split('|');const u=localUnit(id);u.relevance=v;render();await patch(u.id,{relevance:v});setStatus(v==='peripheral'?'周辺の情報に移しました。':'自分に関係ある記憶に戻しました。');return;}
+    if(t.id==='linecode'){const r=await api('/api/line/code',{method:'POST'});await loadLine(r.code);return;}
+    if(t.id==='lineunlink'){await api('/api/line/unlink',{method:'POST'});setStatus('LINEの連携を解除しました。');await loadLine();return;}
     if(t.dataset.asklater){const k=t.dataset.asklater;await api(k==='core'?'/api/core/request':'/api/quiz/request',{method:'POST'});setStatus('依頼しました。次の自動の整理のときにClaudeが行います。');await load();return;}
     if(t.dataset.qrate){const [id,rt]=t.dataset.qrate.split('|');if(rt==='great'){await api(`/api/quiz/${id}/rate`,{method:'POST',body:JSON.stringify({rating:rt})});ui.growth=null;setStatus('採点しました。');render();return;}ui.quizPending={id:Number(id),rating:rt};render();$('qfix').focus();return;}
     if(t.dataset.qcancel!==undefined){ui.quizPending=null;render();return;}
@@ -1288,7 +1417,15 @@ document.addEventListener('click',async e=>{
     if(t.dataset.actgoals!==undefined){ui.view='goals';closeAct();$('panel').scrollIntoView({block:'start'});return;}
     if(t.dataset.actgoal){ui.view='goal';ui.goal=Number(t.dataset.actgoal);closeAct();$('panel').scrollIntoView({block:'start'});return;}
     if(t.dataset.tgoal){const id=Number(t.dataset.tgoal);ui.tgoal=ui.tgoal===id?null:id;render();return;}
-    if(t.dataset.tscope){ui.tscope=t.dataset.tscope;render();return;}
+    if(t.dataset.tscope){ui.tscope=t.dataset.tscope;ui.topen=null;render();return;}
+    if(t.dataset.topen){const id=Number(t.dataset.topen);ui.topen=ui.topen===id?null:id;ui.armed=null;render();return;}
+    if(t.dataset.tnewarea!==undefined){ui.tnewArea=(ui.tnewArea||'work')==='work'?'life':'work';t.textContent=ui.tnewArea==='life'?'プライベート':'仕事';t.className='tk-area '+ui.tnewArea;return;}
+    if(t.dataset.tdone){const u=localUnit(t.dataset.tdone);const nd=!u.done;const row=t.closest('.tk-row');
+      if(row&&nd&&!still.matches){row.classList.add('ticking');await new Promise(r=>setTimeout(r,420));}
+      u.done=nd;render();await patch(u.id,{done:nd});setStatus(nd?'完了にしました。':'未完了に戻しました。');await load();return;}
+    if(t.dataset.twhen){const [id,k]=t.dataset.twhen.split('|');const u=localUnit(id);const now=new Date();
+      const body=k==='none'?{scope:''}:k==='tomorrow'?{scope:'day',period:periodKey('day',shiftDate('day',now,1))}:{scope:k==='today'?'day':k,period:periodKey(k==='today'?'day':k,now)};
+      ui.topen=null;await patch(u.id,body);setStatus({today:'今日',tomorrow:'明日',week:'今週',month:'今月',none:'いつか'}[k]+'に移しました。');await load();return;}
     if(t.dataset.tarea){ui.tarea=t.dataset.tarea;render();return;}
     if(t.dataset.tshift!==undefined){const n=Number(t.dataset.tshift);ui.tdate=n===0?new Date():shiftDate(ui.tscope||'day',ui.tdate||new Date(),n);render();return;}
     if(t.id==='t-add'){addTaskUI();return;}

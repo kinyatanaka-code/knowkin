@@ -202,3 +202,9 @@ CREATE TABLE IF NOT EXISTS google_spaces (
   last_seen_at TIMESTAMPTZ,
   PRIMARY KEY (user_id, name)
 );
+
+-- LINE連携
+ALTER TABLE users ADD COLUMN IF NOT EXISTS line_user_id TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS line_code TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS line_code_expires TIMESTAMPTZ;
+CREATE UNIQUE INDEX IF NOT EXISTS users_line_user_id ON users(line_user_id) WHERE line_user_id IS NOT NULL;

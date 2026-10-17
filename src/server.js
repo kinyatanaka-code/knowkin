@@ -20,6 +20,7 @@ import { getGrowth, rateQuiz, requestQuiz } from './growth.js';
 import { addMilestone, renameMilestone, requestTasks, setMilestone, snapshotGoals, updateGoal } from './goals.js';
 import { authUrl, googleEnabled, googleStatus, handleCallback, listSpaces, setSpaceExcluded, syncAll, syncUser, unlink } from './google.js';
 import { baseUrl, mcpUnauthorized, oauthRouter, revokeAllTokens, userIdFromAccessToken } from './oauth.js';
+import { handleEvents, issueCode, lineStatus, unlinkLine, verifySignature } from './line.js';
 
 const { MCP_SECRET, PORT = 3000 } = process.env;
 for (const k of ['DATABASE_URL', apiKeyEnv].filter(Boolean)) {
@@ -28,6 +29,15 @@ for (const k of ['DATABASE_URL', apiKeyEnv].filter(Boolean)) {
 
 const app = express();
 app.set('trust proxy', 1);
+// LINEのWebhook（署名の確認に生の本文が要るので、JSONの読み取りより前に置く）
+app.post('/line/webhook', express.raw({ type: '*/*', limit: '2mb' }), (req, res) => {
+  const raw = Buffer.isBuffer(req.body) ? req.body : Buffer.from('');
+  if (!verifySignature(raw, req.get('x-line-signature'))) return res.status(401).end();
+  res.status(200).end();
+  let body = {};
+  try { body = JSON.parse(raw.toString('utf8')); } catch { return; }
+  handleEvents(body.events).catch((e) => console.error('LINE', e));
+});
 app.use(express.json({ limit: '2mb' }));
 const dir = path.dirname(fileURLToPath(import.meta.url));
 app.use(express.static(path.join(dir, '..', 'public')));
@@ -227,6 +237,9 @@ api.get('/google/connect', wrap(async (req, res) => {
 }));
 api.post('/google/sync', wrap(async (req, res) => res.json(await syncUser(req.uid))));
 api.post('/google/disconnect', wrap(async (req, res) => { await unlink(req.uid); res.json({ ok: true }); }));
+api.get('/line/status', wrap(async (req, res) => res.json(await lineStatus(req.uid))));
+api.post('/line/code', wrap(async (req, res) => res.json({ code: await issueCode(req.uid) })));
+api.post('/line/unlink', wrap(async (req, res) => { await unlinkLine(req.uid); res.json({ ok: true }); }));
 api.get('/google/spaces', wrap(async (req, res) => res.json(await listSpaces(req.uid))));
 api.patch('/google/spaces', wrap(async (req, res) => { await setSpaceExcluded(req.uid, req.body?.name, req.body?.excluded); res.json({ ok: true }); }));
 app.use('/api', api);
