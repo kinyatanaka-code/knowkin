@@ -385,6 +385,21 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
 .tk-grow.sel{background:linear-gradient(90deg,var(--soft),transparent);margin:0 -16px;padding:0 16px}
 .tk-ghint{font-size:12px;color:var(--muted);margin:8px 0 0}
 @media (prefers-reduced-motion:reduce){.tk-bar i,.tk-check span{transition:none}}
+
+/* ---- 脳のネットワーク（脳の形） ---- */
+@media (max-width:620px){.map.brainmode{aspect-ratio:3/4.4}}
+.map.brainmode{min-height:460px}
+@media (min-width:621px){.map.brainmode{aspect-ratio:16/11}}
+.map.brainmode .node.bl{gap:0;pointer-events:auto}
+.map.brainmode .node.bl .name{font-size:clamp(13px,2vw,16px);padding:2px 8px;border-radius:999px;background:rgba(6,12,34,.55)}
+.map.brainmode .node.bl .count{font-size:11px;margin-top:0}
+.map.brainmode .node.core.pill{flex-direction:row}
+.map.brainmode .node.core.pill .name{font-size:14px;padding:7px 16px;border-radius:999px;background:linear-gradient(135deg,rgba(92,210,255,.28),rgba(176,124,255,.28));border:1px solid rgba(160,200,255,.5);text-shadow:none}
+.brain-note{position:absolute;left:0;right:0;bottom:96px;margin:0;text-align:center;font-size:12px;color:var(--muted);z-index:2;padding:0 12px;pointer-events:none}
+.brain-time{position:absolute;left:8%;right:8%;bottom:56px;display:flex;align-items:center;gap:10px;z-index:3;font-size:11px;color:var(--muted)}
+.brain-time span{white-space:nowrap;min-width:7.5em}
+.brain-time input{flex:1;accent-color:var(--cyan)}
+
 </style>
 </head>
 <body>
@@ -600,19 +615,43 @@ function mapNodes(){
   return [...base,...extra];
 }
 const isPeri=u=>u.relevance==='peripheral';
+// ---- 脳のネットワーク：記憶1つ1つを点にして、脳の形に育てる ----
+// 脳の部位と層の対応（横から見た脳。左が前）。r は基準の大きさ（脳の幅に対する割合）
+const BRAIN_REGIONS={
+  think:{x:.25,y:.42,r:.22,part:'前頭葉'},
+  know:{x:.56,y:.27,r:.20,part:'頭頂葉'},
+  event:{x:.81,y:.45,r:.17,part:'後頭葉'},
+  rel:{x:.50,y:.63,r:.18,part:'側頭葉'},
+  act:{x:.79,y:.80,r:.12,part:'小脳'},
+};
+function brainUnits(){
+  const all=(state.units||[]).filter(u=>!isPeri(u));
+  const wk=ui.brainBack||0;if(!wk)return all;
+  const cut=Date.now()-wk*7*86400000;return all.filter(u=>new Date(u.created_at).getTime()<=cut);
+}
+function brainWeeks(){
+  const all=(state.units||[]).filter(u=>!isPeri(u));if(!all.length)return 0;
+  const first=Math.min(...all.map(u=>new Date(u.created_at).getTime()));
+  return Math.max(0,Math.min(26,Math.floor((Date.now()-first)/(7*86400000))));
+}
 function renderMap(){
   const units=(state.units||[]).filter(u=>!isPeri(u));
   const cnt=id=>units.filter(u=>layerOf(u)===id).length;
   const openTasks=units.filter(u=>(u.type==='task'||u.type==='goal')&&!u.done).length;
   const label=id=>id==='act'&&openTasks?`のこり${openTasks}`:(cnt(id)?cnt(id)+'件':'');
+  const weeks=brainWeeks();if((ui.brainBack||0)>weeks)ui.brainBack=0;
+  $('map').classList.add('brainmode');
   $('map').innerHTML=`<canvas aria-hidden="true"></canvas>
-    <svg class="links" aria-hidden="true"><defs><linearGradient id="linkGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#5CD2FF"/><stop offset="100%" stop-color="#FF6FC8"/></linearGradient></defs><g id="linkPaths"></g></svg>
-    <button type="button" class="node core" data-view="rec" aria-pressed="${ui.view==='rec'}" style="--x:50%;--y:58%;--mx:50%;--my:55%">${BRAIN}<span class="name">記憶</span><span class="count">押して残す</span></button>
-    ${mapNodes().map(n=>`<button type="button" class="node" data-node="${esc(n.id)}" aria-pressed="${ui.view==='layer'&&ui.layer===n.id}" style="--x:${n.x}%;--y:${n.y}%;--mx:${n.mx}%;--my:${n.my}%;--c:${lcol(n.id)}"><span class="orb${n.custom?' small':''}"></span><span class="name">${esc(n.label)}</span><span class="count">${label(n.id)||'&nbsp;'}</span></button>`).join('')}`;
+    <svg class="links" aria-hidden="true"><g id="linkPaths"></g></svg>
+    <button type="button" class="node core pill" data-view="rec" aria-pressed="${ui.view==='rec'}" style="--x:50%;--y:calc(100% - 26px);--mx:50%;--my:calc(100% - 26px)"><span class="name">＋ 記憶を残す</span></button>
+    ${mapNodes().map(n=>`<button type="button" class="node bl" data-node="${esc(n.id)}" aria-pressed="${ui.view==='layer'&&ui.layer===n.id}" style="--x:${n.x}%;--y:${n.y}%;--mx:${n.mx}%;--my:${n.my}%;--c:${lcol(n.id)}"><span class="name">${esc(n.label)}</span><span class="count">${label(n.id)||'&nbsp;'}</span></button>`).join('')}
+    <p class="brain-note" id="brainNote"></p>
+    ${weeks?`<label class="brain-time"><span id="brainWhen">${ui.brainBack?`${ui.brainBack}週間前の脳`:'いまの脳'}</span><input type="range" id="brainRange" min="0" max="${weeks}" step="1" value="${weeks-(ui.brainBack||0)}" aria-label="脳の育ち方をさかのぼる"></label>`:''}`;
   const act=mapGoals();
   if(act.length)$('map').insertAdjacentHTML('beforeend',act.map((g,i)=>{const sl=GOAL_SLOTS[i];const c=GCOL[g.area]||GCOL.work;
-    return `<button type="button" class="goal" data-goal="${g.id}" style="--x:${sl.x}%;--y:${sl.y}%;--mx:${sl.mx}%;--my:${sl.my}%;--sc:${c};--s:${18+g.progress*0.28}px;--o:${(0.55+g.progress/200).toFixed(2)}"><span class="sw"><span class="star"></span></span><span class="gname">${esc(g.title)}</span><span class="gpct${g.stalled?' stall':''}">${g.stalled?g.idle_days+'日動きなし':g.progress+'%'}</span></button>`;}).join(''));
+    return `<button type="button" class="goal" data-goal="${g.id}" style="--x:${sl.x}%;--y:${sl.y}%;--mx:${sl.mx}%;--my:${sl.my}%;--sc:${c};--s:${14+g.progress*0.2}px;--o:${(0.55+g.progress/200).toFixed(2)}"><span class="sw"><span class="star"></span></span><span class="gname">${esc(g.title)}</span><span class="gpct${g.stalled?' stall':''}">${g.stalled?g.idle_days+'日動きなし':g.progress+'%'}</span></button>`;}).join(''));
   else $('map').insertAdjacentHTML('beforeend',`<button type="button" class="goal-hint" data-view="goals">${goalCands().length?`目的の候補が${goalCands().length}件あります`:'目的はここに星として光ります'}</button>`);
+  const rg=$('brainRange');if(rg)rg.addEventListener('input',()=>{ui.brainBack=weeks-Number(rg.value);$('brainWhen').textContent=ui.brainBack?`${ui.brainBack}週間前の脳`:'いまの脳';layoutNet();});
   layoutNet();
   const review=units.filter(u=>!u.reviewed).length+(state.failed||[]).length+cats().filter(c=>!c.reviewed).length+goalCands().length;
   $('magnets').innerHTML=`<button type="button" class="magnet ask-m" data-view="ask" aria-pressed="${ui.view==='ask'}">Claudeに頼む${(state.pending&&state.pending.memos)?`<span class="n">${state.pending.memos}</span>`:''}</button>
@@ -624,51 +663,99 @@ function renderMap(){
   const d=new Date();$('today').textContent=`${d.getMonth()+1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）`;
 }
 
-const net={raf:0,ctx:null,w:0,h:0,parts:[],stars:[],centers:{},core:null};
+const net={raf:0,ctx:null,w:0,h:0,base:null,nodes:[],tw:[],t:0,last:0};
 const still=matchMedia('(prefers-reduced-motion: reduce)');
 const hash=(s,k)=>{let x=2166136261^k;for(const ch of String(s)){x^=ch.charCodeAt(0);x=Math.imul(x,16777619);}return ((x>>>0)%10000)/10000;};
 function layoutNet(){
   const map=$('map');if(!map)return;const canvas=map.querySelector('canvas');if(!canvas)return;
   cancelAnimationFrame(net.raf);
   const box=map.getBoundingClientRect();const dpr=Math.min(window.devicePixelRatio||1,2);
-  net.w=box.width;net.h=box.height;canvas.width=net.w*dpr;canvas.height=net.h*dpr;
+  const w=box.width,h=box.height;net.w=w;net.h=h;canvas.width=w*dpr;canvas.height=h*dpr;
   net.ctx=canvas.getContext('2d');net.ctx.setTransform(dpr,0,0,dpr,0,0);
-  const center=el=>{const r=el.getBoundingClientRect();const orb=el.querySelector('.orb,.brain')||el;const o=orb.getBoundingClientRect();return{x:o.left+o.width/2-box.left,y:o.top+o.height/2-box.top,rw:r.width};};
-  const coreEl=map.querySelector('.node.core');net.core=center(coreEl);
-  net.centers={};map.querySelectorAll('.node[data-node]').forEach(el=>{net.centers[el.dataset.node]=center(el);});
-  // 脳から各層への光るリンク
-  const c=net.core;
-  $('linkPaths').innerHTML=Object.entries(net.centers).map(([id,p],i)=>{const mx=(c.x+p.x)/2+(i%2?18:-18),my=(c.y+p.y)/2+(i%2?-12:12);
-    const d=`M${c.x.toFixed(1)} ${c.y.toFixed(1)} Q${mx.toFixed(1)} ${my.toFixed(1)} ${p.x.toFixed(1)} ${p.y.toFixed(1)}`;return `<path d="${d}"/><path class="flow" d="${d}"/>`;}).join('');
-  map.querySelector('svg.links').setAttribute('viewBox',`0 0 ${net.w} ${net.h}`);
-  const gs=mapGoals();
-  $('linkPaths').insertAdjacentHTML('beforeend',[...map.querySelectorAll('.goal')].map((el,i)=>{const g=gs[i];if(!g)return '';const col=GCOL[g.area]||GCOL.work;
-    const r=el.querySelector('.star').getBoundingClientRect();const x=r.left+r.width/2-box.left,y=r.top+r.height/2-box.top;
-    const f=Math.max(0.04,g.progress/100);const px=c.x+(x-c.x)*f,py=c.y+(y-c.y)*f;
-    return `<path d="M${c.x.toFixed(1)} ${c.y.toFixed(1)} L${x.toFixed(1)} ${y.toFixed(1)}" style="stroke:${col};stroke-width:1.2;stroke-dasharray:2 7;opacity:.55;filter:none"/><circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="4.5" fill="#fff" style="filter:drop-shadow(0 0 5px ${col}) drop-shadow(0 0 10px ${col})"/>`;}).join(''));
-  // 背景の粒子
-  const n=Math.min(110,Math.round(net.w*net.h/7000));
-  if(net.parts.length!==n)net.parts=Array.from({length:n},()=>({x:Math.random()*net.w,y:Math.random()*net.h,vx:(Math.random()-.5)*.25,vy:(Math.random()-.5)*.25,r:Math.random()*1.4+.4}));
-  // 記憶の星：各層のまわりに1件1つ
-  const scale=Math.min(net.w,net.h);
-  net.stars=[];const per={};
-  for(const u of state.units||[]){if(isPeri(u))continue;const l=layerOf(u);per[l]=(per[l]||0)+1;if(per[l]>45)continue;
-    net.stars.push({layer:l,a:hash(u.id,1)*Math.PI*2,rad:scale*(.07+hash(u.id,2)*.09),size:1.6+(u.importance||2)*.6+Math.min(u.count||1,4)*.4,spd:(hash(u.id,3)-.5)*.004,done:u.done});}
+  const units=brainUnits();
+  // 脳の外枠：幅いっぱい、高さは幅の0.78
+  // 記憶が増えるほど脳そのものも大きくなる（1,000件で最大）
+  const grow=Math.min(1,Math.max(.5,.5+.5*Math.log10(1+units.length)/3));
+  const bw=Math.min(w*.9,h*.62/.74)*grow,bh=bw*.74,bx=(w-bw)/2,by=h*(w>620?.52:.47)-bh/2;
+  // 層ごとの数で、部位の大きさを変える（偏りがそのまま形になる）
+  const layerIds=Object.keys(BRAIN_REGIONS);
+  const counts={};for(const id of layerIds)counts[id]=0;
+  const custom=allLayers().filter(l=>l.custom);
+  for(const u of units){const l=layerOf(u);counts[l]=(counts[l]||0)+1;}
+  const avg=layerIds.reduce((s,id)=>s+counts[id],0)/layerIds.length||1;
+  const regions={};
+  for(const id of layerIds){const R=BRAIN_REGIONS[id];const k=counts[id]?Math.min(1.45,Math.max(.62,Math.sqrt(counts[id]/avg))):.5;
+    regions[id]={id,cx:bx+R.x*bw,cy:by+R.y*bh,r:R.r*bw*k,part:R.part};}
+  custom.forEach((l,i)=>{const a=-Math.PI/2+i*1.3;regions[l.id]={id:l.id,cx:bx+(.52+.06*Math.cos(a))*bw,cy:by+(.47+.05*Math.sin(a))*bh,r:bw*.07*Math.min(1.3,Math.max(.6,Math.sqrt((counts[l.id]||1)/avg))),part:l.label};});
+  const regs=Object.values(regions);
+  // 脳の骨組み（大きさは変わらない）。部位の大きさがこの上にふくらみとして乗る
+  const frame=[[.30,.40,.15],[.46,.33,.16],[.62,.36,.15],[.74,.50,.13],[.50,.52,.15],[.36,.55,.12],[.62,.62,.11],[.60,.84,.05],[.58,.92,.04]].map(([x,y,r])=>({cx:bx+x*bw,cy:by+y*bh,r:r*bw}));
+  const blobs=[...frame,...regs];
+  const field=(x,y)=>{let f=0;for(const g of blobs){const dx=x-g.cx,dy=y-g.cy;f+=Math.exp(-(dx*dx+dy*dy)/(g.r*g.r));}return f;};
+  // 記憶の点：自分の部位の中に散らす
+  const nodes=[];const now=Date.now();
+  for(const u of units){const g=regions[layerOf(u)];if(!g)continue;
+    let rr=g.r*.92*Math.sqrt(hash(u.id,2)),a=hash(u.id,1)*Math.PI*2,x=g.cx+rr*Math.cos(a),y=g.cy+rr*Math.sin(a);
+    for(let i=0;i<4&&field(x,y)<.55;i++){rr*=.72;x=g.cx+rr*Math.cos(a);y=g.cy+rr*Math.sin(a);}
+    const rooted=(u.count||1)>=2&&['lesson','value','decision','person'].includes(u.type);
+    const age=(now-new Date(u.created_at).getTime())/3600000;
+    nodes.push({u,x,y,l:layerOf(u),col:lcol(layerOf(u)),r:.9+(u.importance||2)*.45+Math.min(u.count||1,4)*.45+(rooted?.6:0),rooted,fresh:age<48&&!ui.brainBack});}
+  net.nodes=nodes;
+  // つながり：同じ人・同じ目的・同じタグの記憶を、時間順につなぐ
+  const groups=new Map();const add=(k,n)=>{if(!groups.has(k))groups.set(k,[]);groups.get(k).push(n);};
+  for(const n of nodes){for(const p of (n.u.people||[]).slice(0,2))add('p:'+p,n);if(n.u.goal_id)add('g:'+n.u.goal_id,n);for(const t of (n.u.tags||[]).slice(0,2))add('t:'+t,n);}
+  const edges=[];
+  for(const list of groups.values()){if(list.length<2)continue;list.sort((a,b)=>String(a.u.created_at).localeCompare(String(b.u.created_at)));
+    const step=Math.max(1,Math.ceil(list.length/22));for(let i=step;i<list.length;i+=step)edges.push([list[i-step],list[i]]);}
+  // 動かない部分（外枠・しわ・つながり・点）は一度だけ描いておく
+  const off=document.createElement('canvas');off.width=w*dpr;off.height=h*dpr;const g=off.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);
+  // 部位ごとのぼんやりした光
+  for(const r of regs){const grd=g.createRadialGradient(r.cx,r.cy,0,r.cx,r.cy,r.r*1.25);const c=lcol(r.id);
+    grd.addColorStop(0,c+'2e');grd.addColorStop(1,c+'00');g.fillStyle=grd;g.beginPath();g.arc(r.cx,r.cy,r.r*1.25,0,Math.PI*2);g.fill();}
+  // 外枠と、内側のしわ（等高線）
+  const N=Math.round(Math.min(150,Math.max(70,bw/3))),M=Math.round(N*.85);
+  const x0=bx-bw*.2,y0=by-bh*.25,sx=bw*1.4/N,sy=bh*1.5/M;
+  const F=[];for(let j=0;j<=M;j++){const row=[];for(let i=0;i<=N;i++)row.push(field(x0+i*sx,y0+j*sy));F.push(row);}
+  const iso=(T)=>{const segs=[];for(let j=0;j<M;j++)for(let i=0;i<N;i++){const a=F[j][i],b=F[j][i+1],c=F[j+1][i+1],d=F[j+1][i];
+      const idx=(a>T?8:0)|(b>T?4:0)|(c>T?2:0)|(d>T?1:0);if(idx===0||idx===15)continue;
+      const X=i*sx+x0,Y=j*sy+y0,lerp=(p,q)=>(T-p)/(q-p);
+      const top=[X+sx*lerp(a,b),Y],right=[X+sx,Y+sy*lerp(b,c)],bot=[X+sx*lerp(d,c),Y+sy],left=[X,Y+sy*lerp(a,d)];
+      const L={1:[[left,bot]],2:[[bot,right]],3:[[left,right]],4:[[top,right]],5:[[left,top],[bot,right]],6:[[top,bot]],7:[[left,top]],8:[[left,top]],9:[[top,bot]],10:[[top,right],[left,bot]],11:[[top,right]],12:[[left,right]],13:[[bot,right]],14:[[left,bot]]}[idx];
+      for(const s of L)segs.push(s);}return segs;};
+  const stroke=(segs,style,wid)=>{g.strokeStyle=style;g.lineWidth=wid;g.beginPath();for(const [p,q] of segs){g.moveTo(p[0],p[1]);g.lineTo(q[0],q[1]);}g.stroke();};
+  g.lineCap='round';
+  for(const [T,al] of [[1.55,.10],[1.25,.12],[.95,.14],[.7,.16]])stroke(iso(T),`rgba(170,190,255,${al})`,1);
+  g.save();g.shadowColor='rgba(120,170,255,.9)';g.shadowBlur=12;stroke(iso(.42),'rgba(190,215,255,.85)',1.6);g.restore();
+  // つながり
+  for(const [a,b] of edges){const cross=a.l!==b.l;g.strokeStyle=cross?'rgba(210,190,255,.13)':'rgba(170,200,255,.07)';g.lineWidth=cross?.6:.45;
+    g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke();}
+  // 記憶の点（定着した考えは大きく明るく）
+  for(const n of nodes){g.fillStyle=n.col+(n.rooted?'ff':'c8');g.beginPath();g.arc(n.x,n.y,n.r,0,Math.PI*2);g.fill();
+    if(n.rooted){g.save();g.shadowColor=n.col;g.shadowBlur=10;g.fillStyle='#fff';g.beginPath();g.arc(n.x,n.y,n.r*.45,0,Math.PI*2);g.fill();g.restore();}}
+  net.base=off;
+  // 層の名前を部位の上に置く
+  map.querySelectorAll('.node.bl').forEach(el=>{const r=regions[el.dataset.node];if(!r){el.hidden=true;return;}el.hidden=false;
+    if(ui.brainBack){const c=el.querySelector('.count');if(c)c.textContent=(counts[el.dataset.node]||0)+'件';}
+    const px=(r.cx/w*100).toFixed(1)+'%',py=((r.cy-Math.min(r.r*.15,10))/h*100).toFixed(1)+'%';
+    el.style.setProperty('--x',px);el.style.setProperty('--y',py);el.style.setProperty('--mx',px);el.style.setProperty('--my',py);});
+  // 偏りのひとこと
+  const main=layerIds.filter(id=>counts[id]).sort((a,b)=>counts[b]-counts[a]);const nm=id=>LAYERS.find(x=>x.id===id)?.label||id;
+  const note=$('brainNote');if(note)note.textContent=main.length>=2?`育っているのは${nm(main[0])}（${BRAIN_REGIONS[main[0]].part}）、まだ小さいのは${nm(main[main.length-1])}（${BRAIN_REGIONS[main[main.length-1]].part}）`:'記憶が増えると、ここに脳の形ができていきます';
+  // またたかせる点：新しい記憶と、定着した考えの一部
+  net.tw=[...nodes.filter(n=>n.fresh),...nodes.filter(n=>n.rooted&&!n.fresh).slice(0,40)];
   if(still.matches)drawNet();else loopNet();
 }
 function drawNet(){
-  const g=net.ctx;if(!g)return;const{w,h,parts,stars,centers}=net;g.clearRect(0,0,w,h);
-  for(let i=0;i<parts.length;i++){const a=parts[i];for(let j=i+1;j<parts.length;j++){const b=parts[j];const dx=a.x-b.x,dy=a.y-b.y,d=dx*dx+dy*dy;
-    if(d<110*110){g.strokeStyle=`rgba(120,160,255,${(1-Math.sqrt(d)/110)*.28})`;g.lineWidth=.6;g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke();}}}
-  for(const p of parts){g.fillStyle='rgba(190,215,255,.75)';g.beginPath();g.arc(p.x,p.y,p.r,0,Math.PI*2);g.fill();}
-  for(const s of stars){const c=centers[s.layer];if(!c)continue;const x=c.x+Math.cos(s.a)*s.rad,y=c.y+Math.sin(s.a)*s.rad*.8;
-    g.strokeStyle=lcol(s.layer)+'55';g.lineWidth=.8;g.beginPath();g.moveTo(c.x,c.y);g.lineTo(x,y);g.stroke();
-    g.shadowColor=lcol(s.layer);g.shadowBlur=10;g.fillStyle=s.done?'rgba(200,210,235,.5)':lcol(s.layer);g.beginPath();g.arc(x,y,s.size,0,Math.PI*2);g.fill();g.shadowBlur=0;}
+  const g=net.ctx;if(!g)return;const{w,h}=net;g.clearRect(0,0,w,h);
+  if(net.base)g.drawImage(net.base,0,0,w,h);
+  const t=net.t;
+  for(const n of net.tw){const k=.5+.5*Math.sin(t*2+hash(n.u.id,4)*6.28);const rr=n.r*(n.fresh?2.6:1.8)*(.6+.4*k);
+    const grd=g.createRadialGradient(n.x,n.y,0,n.x,n.y,rr*2.2);grd.addColorStop(0,n.col+(n.fresh?'cc':'66'));grd.addColorStop(1,n.col+'00');
+    g.fillStyle=grd;g.beginPath();g.arc(n.x,n.y,rr*2.2,0,Math.PI*2);g.fill();}
 }
-function loopNet(){
-  for(const p of net.parts){p.x+=p.vx;p.y+=p.vy;if(p.x<0||p.x>net.w)p.vx*=-1;if(p.y<0||p.y>net.h)p.vy*=-1;}
-  for(const s of net.stars)s.a+=s.spd;
-  drawNet();net.raf=requestAnimationFrame(loopNet);
+function loopNet(ts=0){
+  if(ts-net.last>33){net.t=ts/1000;net.last=ts;drawNet();}
+  net.raf=requestAnimationFrame(loopNet);
 }
 document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelAnimationFrame(net.raf);else if(!still.matches){cancelAnimationFrame(net.raf);loopNet();}});
 window.addEventListener('resize',()=>{clearTimeout(net.t);net.t=setTimeout(layoutNet,120);});
