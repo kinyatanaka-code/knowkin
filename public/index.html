@@ -389,6 +389,9 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
 /* ---- 脳のネットワーク（脳の形） ---- */
 @media (max-width:620px){.map.brainmode{aspect-ratio:3/4.4}}
 .map.brainmode{min-height:460px}
+.map.brainmode canvas{touch-action:pan-y;cursor:grab}
+.map.brainmode canvas:active{cursor:grabbing}
+.map.brainmode .node.bl{transition:none}
 @media (min-width:621px){.map.brainmode{aspect-ratio:16/11}}
 .map.brainmode .node.bl{gap:0;pointer-events:auto}
 .map.brainmode .node.bl .name{font-size:clamp(13px,2vw,16px);padding:2px 8px;border-radius:999px;background:rgba(6,12,34,.55)}
@@ -663,7 +666,9 @@ function renderMap(){
   const d=new Date();$('today').textContent=`${d.getMonth()+1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）`;
 }
 
-const net={raf:0,ctx:null,w:0,h:0,base:null,nodes:[],tw:[],t:0,last:0};
+// ---- 3Dの脳：記憶を脳の形の中に置き、なぞる・スクロールで回す ----
+const net={raf:0,ctx:null,w:0,h:0,nodes:[],shell:[],edges:[],regions:{},tw:[],t:0,last:0,
+  yaw:-.35,pitch:-.18,vyaw:0,drag:null,lastScroll:window.scrollY,visible:true,S:1,cx:0,cy:0,dirty:true};
 const still=matchMedia('(prefers-reduced-motion: reduce)');
 const hash=(s,k)=>{let x=2166136261^k;for(const ch of String(s)){x^=ch.charCodeAt(0);x=Math.imul(x,16777619);}return ((x>>>0)%10000)/10000;};
 function layoutNet(){
@@ -673,90 +678,119 @@ function layoutNet(){
   const w=box.width,h=box.height;net.w=w;net.h=h;canvas.width=w*dpr;canvas.height=h*dpr;
   net.ctx=canvas.getContext('2d');net.ctx.setTransform(dpr,0,0,dpr,0,0);
   const units=brainUnits();
-  // 脳の外枠：幅いっぱい、高さは幅の0.78
-  // 記憶が増えるほど脳そのものも大きくなる（1,000件で最大）
   const grow=Math.min(1,Math.max(.5,.5+.5*Math.log10(1+units.length)/3));
-  const bw=Math.min(w*.9,h*.62/.74)*grow,bh=bw*.74,bx=(w-bw)/2,by=h*(w>620?.52:.47)-bh/2;
-  // 層ごとの数で、部位の大きさを変える（偏りがそのまま形になる）
-  const layerIds=Object.keys(BRAIN_REGIONS);
-  const counts={};for(const id of layerIds)counts[id]=0;
-  const custom=allLayers().filter(l=>l.custom);
+  net.S=Math.min(w*.42,h*.30)*grow;net.cx=w/2;net.cy=h*(w>620?.52:.47);
+  // 層ごとの数で部位の大きさを変える
+  const layerIds=Object.keys(BRAIN_REGIONS);const counts={};for(const id of layerIds)counts[id]=0;
   for(const u of units){const l=layerOf(u);counts[l]=(counts[l]||0)+1;}
   const avg=layerIds.reduce((s,id)=>s+counts[id],0)/layerIds.length||1;
-  const regions={};
-  for(const id of layerIds){const R=BRAIN_REGIONS[id];const k=counts[id]?Math.min(1.45,Math.max(.62,Math.sqrt(counts[id]/avg))):.5;
-    regions[id]={id,cx:bx+R.x*bw,cy:by+R.y*bh,r:R.r*bw*k,part:R.part};}
-  custom.forEach((l,i)=>{const a=-Math.PI/2+i*1.3;regions[l.id]={id:l.id,cx:bx+(.52+.06*Math.cos(a))*bw,cy:by+(.47+.05*Math.sin(a))*bh,r:bw*.07*Math.min(1.3,Math.max(.6,Math.sqrt((counts[l.id]||1)/avg))),part:l.label};});
-  const regs=Object.values(regions);
-  // 脳の骨組み（大きさは変わらない）。部位の大きさがこの上にふくらみとして乗る
-  const frame=[[.30,.40,.15],[.46,.33,.16],[.62,.36,.15],[.74,.50,.13],[.50,.52,.15],[.36,.55,.12],[.62,.62,.11],[.60,.84,.05],[.58,.92,.04]].map(([x,y,r])=>({cx:bx+x*bw,cy:by+y*bh,r:r*bw}));
-  const blobs=[...frame,...regs];
-  const field=(x,y)=>{let f=0;for(const g of blobs){const dx=x-g.cx,dy=y-g.cy;f+=Math.exp(-(dx*dx+dy*dy)/(g.r*g.r));}return f;};
-  // 記憶の点：自分の部位の中に散らす
+  const k=id=>counts[id]?Math.min(1.45,Math.max(.62,Math.sqrt(counts[id]/avg))):.5;
+  // 座標：x 前(-)〜後(+)、y 上(-)〜下(+)、z 左右。部位は左右の半球に1つずつ
+  const P=(x,y)=>[(x-.5)*2,(y-.5)*1.48];
+  const regions={};const blobs=[];
+  for(const id of layerIds){const R=BRAIN_REGIONS[id];const [x,y]=P(R.x,R.y);const r=R.r*2*k(id);
+    regions[id]={id,x,y,z:0,r,part:R.part};
+    if(id==='act'){blobs.push({x,y,z:-.2,r:r*.95},{x,y,z:.2,r:r*.95});}
+    else{blobs.push({x,y,z:-.26,r},{x,y,z:.26,r});}}
+  const custom=allLayers().filter(l=>l.custom);
+  custom.forEach((l,i)=>{const a=-Math.PI/2+i*1.3;regions[l.id]={id:l.id,x:.04+.12*Math.cos(a),y:-.04+.1*Math.sin(a),z:0,r:.14*Math.min(1.3,Math.max(.6,Math.sqrt((counts[l.id]||1)/avg))),part:l.label};});
+  for(const [x0,y0,r] of [[.30,.40,.15],[.46,.33,.16],[.62,.36,.15],[.74,.50,.13],[.50,.52,.15],[.36,.55,.12],[.62,.62,.11]]){const [x,y]=P(x0,y0);blobs.push({x,y,z:-.24,r:r*2},{x,y,z:.24,r:r*2});}
+  for(const [x0,y0,r] of [[.60,.84,.05],[.58,.92,.04]]){const [x,y]=P(x0,y0);blobs.push({x,y,z:0,r:r*2});}
+  const field=(x,y,z)=>{let f=0;for(const b of blobs){const dx=x-b.x,dy=y-b.y,dz=z-b.z;f+=Math.exp(-(dx*dx+dy*dy+dz*dz)/(b.r*b.r));}return f;};
+  // 記憶の点：自分の部位の中（左右どちらかの半球）に置く
   const nodes=[];const now=Date.now();
   for(const u of units){const g=regions[layerOf(u)];if(!g)continue;
-    let rr=g.r*.92*Math.sqrt(hash(u.id,2)),a=hash(u.id,1)*Math.PI*2,x=g.cx+rr*Math.cos(a),y=g.cy+rr*Math.sin(a);
-    for(let i=0;i<4&&field(x,y)<.55;i++){rr*=.72;x=g.cx+rr*Math.cos(a);y=g.cy+rr*Math.sin(a);}
+    const side=g.z===0&&layerOf(u).startsWith('n:')?0:(hash(u.id,5)<.5?-1:1);
+    const th=hash(u.id,1)*Math.PI*2,ph=Math.acos(2*hash(u.id,2)-1);let rr=g.r*.85*Math.cbrt(hash(u.id,3));
+    const dx=Math.sin(ph)*Math.cos(th),dy=Math.sin(ph)*Math.sin(th),dz=Math.cos(ph);const zc=side*(layerOf(u)==='act'?.2:.26);
+    let x=g.x+dx*rr,y=g.y+dy*rr,z=zc+dz*rr*.8;
+    for(let i=0;i<5&&field(x,y,z)<.9;i++){rr*=.7;x=g.x+dx*rr;y=g.y+dy*rr;z=zc+dz*rr*.8;}
     const rooted=(u.count||1)>=2&&['lesson','value','decision','person'].includes(u.type);
     const age=(now-new Date(u.created_at).getTime())/3600000;
-    nodes.push({u,x,y,l:layerOf(u),col:lcol(layerOf(u)),r:.9+(u.importance||2)*.45+Math.min(u.count||1,4)*.45+(rooted?.6:0),rooted,fresh:age<48&&!ui.brainBack});}
-  net.nodes=nodes;
+    nodes.push({u,x,y,z,l:layerOf(u),col:lcol(layerOf(u)),r:.8+(u.importance||2)*.4+Math.min(u.count||1,4)*.4+(rooted?.6:0),rooted,fresh:age<48&&!ui.brainBack});}
+  // 表面のしきい値：記憶の点がほぼすべて内側に入るように決める
+  const fv=nodes.map(n=>field(n.x,n.y,n.z)).sort((a,b)=>a-b);const T=Math.max(.35,Math.min(1.2,(fv[Math.floor(fv.length*.03)]||.6)*.85));
+  // 脳の表面：中心から放射状に、表面にぶつかる点を集める
+  const NS=w>620?2600:1800;const shell=[];const ga=Math.PI*(3-Math.sqrt(5));
+  for(let i=0;i<NS;i++){const yy=1-2*(i+.5)/NS,rr=Math.sqrt(1-yy*yy),th=ga*i;const dx=Math.cos(th)*rr,dy=yy,dz=Math.sin(th)*rr;
+    let t=.05,ox=.05,oy=0,oz=0,hit=null;for(;t<2.2;t+=.02){const x=ox+dx*t,y=oy+dy*t,z=oz+dz*t;if(field(x,y,z)<T){hit=[x,y,z];break;}}
+    if(hit){const e=.03;const nx=field(hit[0]-e,hit[1],hit[2])-field(hit[0]+e,hit[1],hit[2]),ny=field(hit[0],hit[1]-e,hit[2])-field(hit[0],hit[1]+e,hit[2]),nz=field(hit[0],hit[1],hit[2]-e)-field(hit[0],hit[1],hit[2]+e);const nl=Math.hypot(nx,ny,nz)||1;
+      shell.push({x:hit[0],y:hit[1],z:hit[2],nx:nx/nl,ny:ny/nl,nz:nz/nl});}}
+  net.shell=shell;
+  net.nodes=nodes;net.regions=regions;
   // つながり：同じ人・同じ目的・同じタグの記憶を、時間順につなぐ
-  const groups=new Map();const add=(k,n)=>{if(!groups.has(k))groups.set(k,[]);groups.get(k).push(n);};
+  const groups=new Map();const add=(key,n)=>{if(!groups.has(key))groups.set(key,[]);groups.get(key).push(n);};
   for(const n of nodes){for(const p of (n.u.people||[]).slice(0,2))add('p:'+p,n);if(n.u.goal_id)add('g:'+n.u.goal_id,n);for(const t of (n.u.tags||[]).slice(0,2))add('t:'+t,n);}
-  const edges=[];
-  for(const list of groups.values()){if(list.length<2)continue;list.sort((a,b)=>String(a.u.created_at).localeCompare(String(b.u.created_at)));
+  const edges=[];for(const list of groups.values()){if(list.length<2)continue;list.sort((a,b)=>String(a.u.created_at).localeCompare(String(b.u.created_at)));
     const step=Math.max(1,Math.ceil(list.length/22));for(let i=step;i<list.length;i+=step)edges.push([list[i-step],list[i]]);}
-  // 動かない部分（外枠・しわ・つながり・点）は一度だけ描いておく
-  const off=document.createElement('canvas');off.width=w*dpr;off.height=h*dpr;const g=off.getContext('2d');g.setTransform(dpr,0,0,dpr,0,0);
-  // 部位ごとのぼんやりした光
-  for(const r of regs){const grd=g.createRadialGradient(r.cx,r.cy,0,r.cx,r.cy,r.r*1.25);const c=lcol(r.id);
-    grd.addColorStop(0,c+'2e');grd.addColorStop(1,c+'00');g.fillStyle=grd;g.beginPath();g.arc(r.cx,r.cy,r.r*1.25,0,Math.PI*2);g.fill();}
-  // 外枠と、内側のしわ（等高線）
-  const N=Math.round(Math.min(150,Math.max(70,bw/3))),M=Math.round(N*.85);
-  const x0=bx-bw*.2,y0=by-bh*.25,sx=bw*1.4/N,sy=bh*1.5/M;
-  const F=[];for(let j=0;j<=M;j++){const row=[];for(let i=0;i<=N;i++)row.push(field(x0+i*sx,y0+j*sy));F.push(row);}
-  const iso=(T)=>{const segs=[];for(let j=0;j<M;j++)for(let i=0;i<N;i++){const a=F[j][i],b=F[j][i+1],c=F[j+1][i+1],d=F[j+1][i];
-      const idx=(a>T?8:0)|(b>T?4:0)|(c>T?2:0)|(d>T?1:0);if(idx===0||idx===15)continue;
-      const X=i*sx+x0,Y=j*sy+y0,lerp=(p,q)=>(T-p)/(q-p);
-      const top=[X+sx*lerp(a,b),Y],right=[X+sx,Y+sy*lerp(b,c)],bot=[X+sx*lerp(d,c),Y+sy],left=[X,Y+sy*lerp(a,d)];
-      const L={1:[[left,bot]],2:[[bot,right]],3:[[left,right]],4:[[top,right]],5:[[left,top],[bot,right]],6:[[top,bot]],7:[[left,top]],8:[[left,top]],9:[[top,bot]],10:[[top,right],[left,bot]],11:[[top,right]],12:[[left,right]],13:[[bot,right]],14:[[left,bot]]}[idx];
-      for(const s of L)segs.push(s);}return segs;};
-  const stroke=(segs,style,wid)=>{g.strokeStyle=style;g.lineWidth=wid;g.beginPath();for(const [p,q] of segs){g.moveTo(p[0],p[1]);g.lineTo(q[0],q[1]);}g.stroke();};
-  g.lineCap='round';
-  for(const [T,al] of [[1.55,.10],[1.25,.12],[.95,.14],[.7,.16]])stroke(iso(T),`rgba(170,190,255,${al})`,1);
-  g.save();g.shadowColor='rgba(120,170,255,.9)';g.shadowBlur=12;stroke(iso(.42),'rgba(190,215,255,.85)',1.6);g.restore();
-  // つながり
-  for(const [a,b] of edges){const cross=a.l!==b.l;g.strokeStyle=cross?'rgba(210,190,255,.13)':'rgba(170,200,255,.07)';g.lineWidth=cross?.6:.45;
-    g.beginPath();g.moveTo(a.x,a.y);g.lineTo(b.x,b.y);g.stroke();}
-  // 記憶の点（定着した考えは大きく明るく）
-  for(const n of nodes){g.fillStyle=n.col+(n.rooted?'ff':'c8');g.beginPath();g.arc(n.x,n.y,n.r,0,Math.PI*2);g.fill();
-    if(n.rooted){g.save();g.shadowColor=n.col;g.shadowBlur=10;g.fillStyle='#fff';g.beginPath();g.arc(n.x,n.y,n.r*.45,0,Math.PI*2);g.fill();g.restore();}}
-  net.base=off;
-  // 層の名前を部位の上に置く
-  map.querySelectorAll('.node.bl').forEach(el=>{const r=regions[el.dataset.node];if(!r){el.hidden=true;return;}el.hidden=false;
-    if(ui.brainBack){const c=el.querySelector('.count');if(c)c.textContent=(counts[el.dataset.node]||0)+'件';}
-    const px=(r.cx/w*100).toFixed(1)+'%',py=((r.cy-Math.min(r.r*.15,10))/h*100).toFixed(1)+'%';
-    el.style.setProperty('--x',px);el.style.setProperty('--y',py);el.style.setProperty('--mx',px);el.style.setProperty('--my',py);});
+  net.edges=edges.slice(0,1600);
+  net.tw=[...nodes.filter(n=>n.fresh),...nodes.filter(n=>n.rooted&&!n.fresh).slice(0,40)];
   // 偏りのひとこと
   const main=layerIds.filter(id=>counts[id]).sort((a,b)=>counts[b]-counts[a]);const nm=id=>LAYERS.find(x=>x.id===id)?.label||id;
   const note=$('brainNote');if(note)note.textContent=main.length>=2?`育っているのは${nm(main[0])}（${BRAIN_REGIONS[main[0]].part}）、まだ小さいのは${nm(main[main.length-1])}（${BRAIN_REGIONS[main[main.length-1]].part}）`:'記憶が増えると、ここに脳の形ができていきます';
-  // またたかせる点：新しい記憶と、定着した考えの一部
-  net.tw=[...nodes.filter(n=>n.fresh),...nodes.filter(n=>n.rooted&&!n.fresh).slice(0,40)];
+  if(ui.brainBack)map.querySelectorAll('.node.bl').forEach(el=>{const c=el.querySelector('.count');if(c)c.textContent=(counts[el.dataset.node]||0)+'件';});
+  bindBrainDrag(map);
+  net.dirty=true;
   if(still.matches)drawNet();else loopNet();
+}
+// 回転して画面に映す
+function proj(x,y,z){
+  const cy=Math.cos(net.yaw),sy=Math.sin(net.yaw),cp=Math.cos(net.pitch),sp=Math.sin(net.pitch);
+  const x1=x*cy+z*sy,z1=-x*sy+z*cy;const y2=y*cp-z1*sp,z2=y*sp+z1*cp;
+  const d=3.4,s=net.S*d/(d+z2);return [net.cx+x1*s,net.cy+y2*s,z2,s/net.S];
 }
 function drawNet(){
   const g=net.ctx;if(!g)return;const{w,h}=net;g.clearRect(0,0,w,h);
-  if(net.base)g.drawImage(net.base,0,0,w,h);
+  const cy=Math.cos(net.yaw),sy=Math.sin(net.yaw),cp=Math.cos(net.pitch),sp=Math.sin(net.pitch);
+  // 表面：輪郭（横を向いている面）ほど明るく、奥ほど暗く
+  for(const p of net.shell){const [X,Y,Z,sc]=proj(p.x,p.y,p.z);
+    const nz1=-p.nx*sy+p.nz*cy,nz2=p.ny*sp+nz1*cp;const rim=1-Math.abs(nz2);const back=Z>0;
+    const a=(back?.02:.04)+Math.pow(rim,3)*(back?.35:.8);if(a<.05)continue;
+    g.fillStyle=`rgba(185,210,255,${a.toFixed(3)})`;g.fillRect(X-.7*sc,Y-.7*sc,1.4*sc,1.4*sc);}
+  // 点を奥から順に
+  const P=net.nodes.map(n=>{const q=proj(n.x,n.y,n.z);return {n,X:q[0],Y:q[1],Z:q[2],s:q[3]};});
+  const idx=new Map();P.forEach(p=>idx.set(p.n,p));
+  // つながり
+  g.lineWidth=.5;
+  for(const [a,b] of net.edges){const A=idx.get(a),B=idx.get(b);const depth=(A.Z+B.Z)/2;const al=(a.l!==b.l?.14:.07)*(depth<0?1:.55);
+    g.strokeStyle=a.l!==b.l?`rgba(215,195,255,${al})`:`rgba(170,200,255,${al})`;g.beginPath();g.moveTo(A.X,A.Y);g.lineTo(B.X,B.Y);g.stroke();}
+  P.sort((a,b)=>b.Z-a.Z);
+  for(const p of P){const near=Math.max(0,Math.min(1,.5-p.Z*.6));const r=p.n.r*p.s;
+    g.globalAlpha=.3+.7*near;g.fillStyle=p.n.col;g.beginPath();g.arc(p.X,p.Y,r,0,Math.PI*2);g.fill();
+    if(p.n.rooted&&near>.4){g.fillStyle='#fff';g.beginPath();g.arc(p.X,p.Y,r*.45,0,Math.PI*2);g.fill();}}
+  g.globalAlpha=1;
+  // またたく点
   const t=net.t;
-  for(const n of net.tw){const k=.5+.5*Math.sin(t*2+hash(n.u.id,4)*6.28);const rr=n.r*(n.fresh?2.6:1.8)*(.6+.4*k);
-    const grd=g.createRadialGradient(n.x,n.y,0,n.x,n.y,rr*2.2);grd.addColorStop(0,n.col+(n.fresh?'cc':'66'));grd.addColorStop(1,n.col+'00');
-    g.fillStyle=grd;g.beginPath();g.arc(n.x,n.y,rr*2.2,0,Math.PI*2);g.fill();}
+  for(const n of net.tw){const p=idx.get(n);if(!p||p.Z>.3)continue;const k=.5+.5*Math.sin(t*2+hash(n.u.id,4)*6.28);const rr=n.r*p.s*(n.fresh?2.6:1.8)*(.6+.4*k);
+    const grd=g.createRadialGradient(p.X,p.Y,0,p.X,p.Y,rr*2.2);grd.addColorStop(0,n.col+(n.fresh?'cc':'66'));grd.addColorStop(1,n.col+'00');
+    g.fillStyle=grd;g.beginPath();g.arc(p.X,p.Y,rr*2.2,0,Math.PI*2);g.fill();}
+  // 層の名前を部位の位置に（手前の半球側の中心）
+  const map=$('map');if(map)map.querySelectorAll('.node.bl').forEach(el=>{const r=net.regions[el.dataset.node];if(!r){el.hidden=true;return;}el.hidden=false;
+    const zs=[-.26,.26].map(z=>proj(r.x,r.y,z));const q=zs[0][2]<zs[1][2]?zs[0]:zs[1];
+    const px=(q[0]/w*100).toFixed(2)+'%',py=(q[1]/h*100).toFixed(2)+'%';
+    el.style.setProperty('--x',px);el.style.setProperty('--y',py);el.style.setProperty('--mx',px);el.style.setProperty('--my',py);});
+  net.dirty=false;
 }
 function loopNet(ts=0){
-  if(ts-net.last>33){net.t=ts/1000;net.last=ts;drawNet();}
+  if(ts-net.last>33){
+    const dt=Math.min(.1,(ts-net.last)/1000);net.t=ts/1000;net.last=ts;
+    if(!net.drag){net.yaw+=net.vyaw;net.vyaw*=.94;if(Math.abs(net.vyaw)<.0006)net.vyaw=0;if(!net.vyaw)net.yaw+=.12*dt;}
+    if(net.visible)drawNet();
+  }
   net.raf=requestAnimationFrame(loopNet);
 }
+// なぞって回す（横になぞると左右、縦は少し傾く）。縦のスクロールはページのまま
+function bindBrainDrag(map){
+  const cv=map.querySelector('canvas');if(!cv||cv.dataset.bound)return;cv.dataset.bound='1';
+  cv.addEventListener('pointerdown',e=>{net.drag={x:e.clientX,y:e.clientY,yaw:net.yaw,pitch:net.pitch,t:performance.now()};net.vyaw=0;cv.setPointerCapture?.(e.pointerId);});
+  cv.addEventListener('pointermove',e=>{const d=net.drag;if(!d)return;const dx=e.clientX-d.x,dy=e.clientY-d.y;
+    const ny=d.yaw+dx*.012;net.vyaw=(ny-net.yaw)*.6;net.yaw=ny;net.pitch=Math.max(-.7,Math.min(.5,d.pitch+dy*.006));if(still.matches)drawNet();});
+  const end=()=>{net.drag=null;};cv.addEventListener('pointerup',end);cv.addEventListener('pointercancel',end);
+  if('IntersectionObserver' in window)new IntersectionObserver(es=>{net.visible=es[0].isIntersecting;}).observe(map);
+}
+// ページのスクロールに合わせて脳が回る
+window.addEventListener('scroll',()=>{const y=window.scrollY;const d=y-net.lastScroll;net.lastScroll=y;if(!net.visible)return;
+  net.yaw+=d*.006;net.pitch=Math.max(-.7,Math.min(.5,net.pitch+d*.0008));if(still.matches)drawNet();},{passive:true});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelAnimationFrame(net.raf);else if(!still.matches){cancelAnimationFrame(net.raf);loopNet();}});
 window.addEventListener('resize',()=>{clearTimeout(net.t);net.t=setTimeout(layoutNet,120);});
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>layoutNet());
