@@ -12,8 +12,8 @@ function progressOf(g, ms, tasks) {
   const taskFrac = total ? done / total : 0;
   if (!ms.length) return Math.round(taskFrac * 95);
   const d = ms.filter((m) => m.done).length;
-  const cur = d < ms.length ? taskFrac : 0;
-  return Math.min(99, Math.round(((d + cur) / ms.length) * 100));
+  if (d === ms.length) return 100; // 道のりをすべて終えたら達成
+  return Math.min(99, Math.round(((d + taskFrac) / ms.length) * 100));
 }
 
 export async function getGoals(uid, { includeClosed = false } = {}) {

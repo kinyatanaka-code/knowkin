@@ -584,7 +584,7 @@ function renderGoal(p){
     <div class="actions" style="justify-content:flex-start;margin-top:18px">
       <button class="ghost" data-gpin="${g.id}">${g.pinned?'ピン留めを外す':'ネットワークにピン留め'}</button>
       <button class="ghost" data-gstatus="${g.id}|${g.status==='paused'?'active':'paused'}">${g.status==='paused'?'再開する':'保留にする'}</button>
-      <button class="ghost${arm('gd'+g.id)?' on':''}" data-gdone="${g.id}">${arm('gd'+g.id)?'もう一度押すと達成にします':'達成した'}</button>
+      <button class="${g.progress>=100?'primary':'ghost'}${arm('gd'+g.id)?' on':''}" data-gdone="${g.id}">${arm('gd'+g.id)?'もう一度押すと達成にします':g.progress>=100?'達成にする':'達成した'}</button>
       <button class="ghost${arm('gx'+g.id)?' on':''}" data-gdrop="${g.id}">${arm('gx'+g.id)?'もう一度押すと手放します':'手放す'}</button>
     </div>
   </div>`;

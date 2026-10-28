@@ -306,6 +306,7 @@ ${JSON.stringify(units)}`);
     inputSchema: {
       goal_id: z.number().int(),
       title: z.string().optional(), future: z.string().optional(), criteria: z.string().optional(),
+      status: z.enum(['active', 'paused', 'done']).optional().describe('本人が「達成した」「保留にして」と言ったときだけ変える'),
       due: z.string().nullable().optional().describe('YYYY-MM-DD'),
       milestones: z.array(z.object({ id: z.number().int(), title: z.string() })).optional().describe('名前を変える道のり'),
     },
