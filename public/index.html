@@ -403,6 +403,8 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
 .brain-time span{white-space:nowrap;min-width:7.5em}
 .brain-time input{flex:1;accent-color:var(--cyan)}
 
+.review-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px;padding:10px 12px;border-radius:14px;background:var(--panel,#0f1736);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.25)}
+.review-top span{font-size:14px;color:var(--muted)}.review-top b{color:var(--text,#fff);font-size:18px}
 </style>
 </head>
 <body>
@@ -1337,6 +1339,7 @@ function renderMemList(){
 }
 function renderReview(p){
   const unreviewed=state.units.filter(u=>!u.reviewed);const failed=state.failed||[];let html=`<h2>見直し</h2>`;
+  if(unreviewed.length)html+=`<div class="review-top"><span>確認待ちの記憶 <b>${unreviewed.length}</b>件</span><button class="primary" id="okall">全部確認済みにする</button></div>`;
   const newCats=cats().filter(c=>!c.reviewed);
   if(goalCands().length)html+=`<h4>目的の候補</h4><p class="lead">話したことや記録から、Claudeが見つけた「叶えたいこと」です。</p><ul class="list">${goalCands().map(candHTML).join('')}</ul>`;
   if(newCats.length)html+=`<h4>新しくできたカテゴリ</h4><p class="lead">どの種類にも当てはまらない記憶のために、Claudeが作りました。このまま使うか、既存の種類にまとめてください。</p>
@@ -1346,7 +1349,7 @@ function renderReview(p){
   if(failed.length)html+=state.aiEnabled
     ?`<h4>分類できなかったメモ</h4><ul class="list">${failed.map(m=>`<li class="item"><div class="body"><p class="content">${esc(m.text)}</p><div class="row-actions"><button data-reclass="${m.id}">分類し直す</button></div></div></li>`).join('')}</ul>`
     :`<h4>未整理のメモ（${failed.length}件）</h4><p class="lead">Claudeとの会話で「knowkinの未整理メモを整理して」と頼むと、分類されて記憶に入ります。</p><ul class="list">${failed.map(m=>`<li class="item"><div class="body"><p class="content">${esc(m.text)}</p></div></li>`).join('')}</ul>`;
-  if(unreviewed.length)html+=`<div class="actions" style="justify-content:space-between;margin-top:8px"><span class="lead" style="margin:0">分類を確認して、違うものは直してください。</span><button class="ghost" id="okall">全部確認済みにする</button></div><ul class="list">${unreviewed.map(u=>unitHTML(u,{review:true})).join('')}</ul>`;
+  if(unreviewed.length)html+=`<h4>確認待ちの記憶</h4><p class="lead">分類を確認して、違うものは直してください。</p><ul class="list">${unreviewed.map(u=>unitHTML(u,{review:true})).join('')}</ul>`;
   if(!failed.length&&!unreviewed.length&&!newCats.length&&!goalCands().length)html+=`<p class="empty">見直すものはありません。週に1回ここを開いて、分類を確認するのがおすすめです。</p>`;
   p.innerHTML=html;
 }
