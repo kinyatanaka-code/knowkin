@@ -405,6 +405,7 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
 
 .review-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px;padding:10px 12px;border-radius:14px;background:var(--panel,#0f1736);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.25)}
 .review-top span{font-size:14px;color:var(--muted)}.review-top b{color:var(--text,#fff);font-size:18px}
+.done-box{margin-top:10px}.done-box summary{cursor:pointer;color:var(--muted);font-size:14px;padding:8px 0}
 </style>
 </head>
 <body>
@@ -581,7 +582,9 @@ function renderGoal(p){
     <div class="copyrow" style="margin-top:10px"><input id="ms-new" type="text" placeholder="道のりを足す（例：月150件を達成する）" aria-label="道のりを足す"><button class="ghost" data-msadd="${g.id}">追加</button></div>
     <h4>つながっているタスク</h4>
     ${g.task_request_at?`<p class="hint" style="margin:0 0 8px">タスクづくりを依頼中です。次の整理のときにClaudeが、これまでの知識をもとにタスクを作って「提案」として入れます。</p>`:`<div class="actions" style="justify-content:flex-start;margin:0 0 8px"><button class="ghost" data-greqtasks="${g.id}">これまでの知識でタスクを作る</button></div>`}
-    ${tasks.length?`<ul class="list">${tasks.map(u=>unitHTML(u)).join('')}</ul>`:'<p class="empty" style="padding:8px 0">まだありません。整理のときにClaudeがつなげます。</p>'}
+    ${tasks.length?(()=>{const op=tasks.filter(u=>!u.done).sort((x,y)=>String(x.due||'9999').localeCompare(String(y.due||'9999'))),dn=tasks.filter(u=>u.done);
+      return `${op.length?`<ul class="list">${op.map(u=>unitHTML(u)).join('')}</ul>`:'<p class="empty" style="padding:8px 0">残っているタスクはありません。</p>'}
+      ${dn.length?`<details class="done-box"><summary>終わったタスク ${dn.length}件</summary><ul class="list">${dn.map(u=>unitHTML(u)).join('')}</ul></details>`:''}`;})():'<p class="empty" style="padding:8px 0">まだありません。整理のときにClaudeがつなげます。</p>'}
     ${others.length?`<h4>つながっている記憶</h4><ul class="list">${others.map(u=>unitHTML(u)).join('')}</ul>`:''}
     <div class="actions" style="justify-content:flex-start;margin-top:18px">
       <button class="ghost" data-gpin="${g.id}">${g.pinned?'ピン留めを外す':'ネットワークにピン留め'}</button>
@@ -1330,7 +1333,7 @@ function renderMemList(){
       ${open.peri?'<p class="hint" style="margin:0 0 6px">自分が当事者ではない、周りのやり取りなどです。核や再現度テスト、目的のタスクづくりには使いません。</p>':''}
       ${open.person?`${open.about.length?`<h4>人物像</h4><ul class="list">${open.about.map(u=>unitHTML(u,{showLayer:true,relToggle:true})).join('')}</ul>`:''}
         ${open.with.length?`<h4>関わった記憶</h4><ul class="list">${open.with.slice(0,300).map(u=>unitHTML(u,{showLayer:true,relToggle:true})).join('')}</ul>`:''}`
-      :`<ul class="list">${open.units.slice(0,300).map(u=>unitHTML(u,{showLayer:lid==='rel',relToggle:true})).join('')}</ul>`}`;
+      :`<ul class="list">${[...open.units.filter(u=>!u.done),...open.units.filter(u=>u.done)].slice(0,300).map(u=>unitHTML(u,{showLayer:lid==='rel',relToggle:true})).join('')}</ul>`}`;
     return;
   }
   box.innerHTML=`<div class="drawers">${ds.map(d=>`<button type="button" class="drawer${d.peri?' peri':''}" data-drawer="${esc(d.key)}" style="--c:${d.peri?'var(--muted)':col}">
