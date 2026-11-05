@@ -662,8 +662,7 @@ function renderMap(){
   const rg=$('brainRange');if(rg)rg.addEventListener('input',()=>{ui.brainBack=weeks-Number(rg.value);$('brainWhen').textContent=ui.brainBack?`${ui.brainBack}週間前の脳`:'いまの脳';layoutNet();});
   layoutNet();
   const review=units.filter(u=>!u.reviewed).length+(state.failed||[]).length+cats().filter(c=>!c.reviewed).length+goalCands().length;
-  $('magnets').innerHTML=`<button type="button" class="magnet ask-m" data-view="ask" aria-pressed="${ui.view==='ask'}">Claudeに頼む${(state.pending&&state.pending.memos)?`<span class="n">${state.pending.memos}</span>`:''}</button>
-    <button type="button" class="magnet" data-view="review" aria-pressed="${ui.view==='review'}">見直し${review?`<span class="n">${review}</span>`:''}</button>
+  $('magnets').innerHTML=`<button type="button" class="magnet" data-view="review" aria-pressed="${ui.view==='review'}">見直し${review?`<span class="n">${review}</span>`:''}</button>
     <button type="button" class="magnet" data-view="goals" aria-pressed="${ui.view==='goals'||ui.view==='goal'}">目的${goalCands().length?`<span class="n">${goalCands().length}</span>`:''}</button>
     <button type="button" class="magnet" data-view="core" aria-pressed="${ui.view==='core'}">核${state.core?'':'<span class="n">まだ</span>'}</button>
     <button type="button" class="magnet" data-view="growth" aria-pressed="${ui.view==='growth'}">脳の成長</button>
@@ -1302,7 +1301,7 @@ function renderActView(){
       ${act.length?`<ul>${act.map(actGoalRow).join('')}</ul><p class="tk-ghint">目的を押すと、その目的のタスクだけになります。</p>`:`<p class="av-empty">進行中の目的はまだありません。やりたいことを記録すると、Claudeが候補を出します。</p>`}
     </section>
   </main>
-  <nav class="av-tab" aria-label="画面の切り替え"><button type="button" data-acttab="brain"><span></span>脳</button><button type="button" class="on" aria-current="page"><span></span>行動</button><button type="button" data-acttab="rec"><span></span>記録</button><button type="button" data-acttab="review"><span></span>見直し</button><button type="button" data-acttab="ask"><span></span>頼む</button></nav>`;
+  <nav class="av-tab" aria-label="画面の切り替え"><button type="button" data-acttab="brain"><span></span>脳</button><button type="button" class="on" aria-current="page"><span></span>行動</button><button type="button" data-acttab="rec"><span></span>記録</button><button type="button" data-acttab="review"><span></span>見直し</button></nav>`;
   renderTasks($('av-tasks'));
 }
 
