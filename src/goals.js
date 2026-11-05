@@ -91,6 +91,28 @@ export async function addMilestone(uid, goalId, title) {
   await pool.query('INSERT INTO milestones(goal_id, title, position) VALUES($1,$2,$3)', [goalId, t, rows[0].p]);
 }
 
+// 道のりをまとめて足す。before_id を指定するとその道のりの前に入れる（指定がなければ最後の道のりの前）
+export async function addMilestones(uid, goalId, items = []) {
+  await own(uid, goalId);
+  const { rows: ms } = await pool.query('SELECT id, title FROM milestones WHERE goal_id = $1 ORDER BY position, id', [goalId]);
+  const order = ms.map((m) => ({ id: m.id, title: m.title }));
+  const added = [];
+  for (const it of items) {
+    const t = s(it.title, 80); if (!t) continue;
+    if (order.some((m) => m.title === t)) continue; // 同じ名前は足さない
+    const { rows } = await pool.query('INSERT INTO milestones(goal_id, title, position, done, done_at) VALUES($1,$2,0,$3,CASE WHEN $3 THEN now() END) RETURNING id',
+      [goalId, t, Boolean(it.done)]);
+    let at = order.length ? order.length - 1 : 0; // 既定は最後（＝達成）の前
+    if (it.before_id) { const i = order.findIndex((m) => m.id === Number(it.before_id)); if (i >= 0) at = i; }
+    else if (it.at_end) at = order.length;
+    order.splice(at, 0, { id: rows[0].id, title: t });
+    added.push(t);
+  }
+  for (let i = 0; i < order.length; i++) await pool.query('UPDATE milestones SET position = $1 WHERE id = $2', [i, order[i].id]);
+  if (added.length) await touch(goalId);
+  return added;
+}
+
 export async function linkUnits(uid, goalId, unitIds) {
   if (goalId !== null) { const g = await own(uid, goalId); if (!['active', 'paused', 'candidate'].includes(g.status)) throw new Error('その目的は終わっています'); }
   const r = await pool.query('UPDATE units SET goal_id = $1 WHERE user_id = $2 AND id = ANY($3)', [goalId, uid, unitIds]);

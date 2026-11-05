@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { addQuiz, getGrowth, openQuiz, quizMaterial, quizNeeded, rateQuiz } from './growth.js';
 import { getBriefing } from './briefing.js';
-import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, renameMilestone, setGoalNote, updateGoal } from './goals.js';
+import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, renameMilestone, setGoalNote, updateGoal, addMilestones } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
   getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getGenres, getUnitsForRelevance, setRelevance, upkeepNeeds, markImported, getUnitsWithoutGenre, setGenres, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
@@ -316,6 +316,24 @@ ${JSON.stringify(units)}`);
       for (const m of milestones || []) await renameMilestone(uid, gid, m.id, m.title);
       return text('目的を書き換えました。');
     } catch (e) { return text(`書き換えられませんでした：${e.message}`); }
+  });
+
+  server.registerTool('add_milestones', {
+    title: '道のりを足す',
+    description: 'ユーザーが「道のり」とだけ言ったとき、または「道のりを足して」「道のりを見直して」と頼んだときに使う。先に get_goals と get_goal_context で目的・今の道のり・つながった記憶を読み、これまでの会話や記録で決まったこと・始めたことのうち、道のりに入っていない大事な中間地点を足す。すでに済んでいるものは done を true にする。並びは before_id（その道のりの前に入れる）で指定し、指定しなければ最後の道のり（達成）の前に入る。同じ名前は足さない。足したあとは、何を足したか、なぜそれを足したかを本人に伝える。',
+    inputSchema: {
+      goal_id: z.number().int(),
+      milestones: z.array(z.object({
+        title: z.string().describe('道のりの名前（20〜30字くらい。何ができたら済みかがわかる形）'),
+        done: z.boolean().optional().describe('記録からすでに済んでいるとわかるとき true'),
+        before_id: z.number().int().optional().describe('この道のりの前に入れる'),
+      })).min(1).max(6),
+    },
+  }, async ({ goal_id: gid, milestones }) => {
+    try {
+      const added = await addMilestones(uid, gid, milestones);
+      return text(added.length ? `道のりを${added.length}つ足しました：${added.join('／')}` : '足せる新しい道のりはありませんでした（同じ名前がすでにあります）。');
+    } catch (e) { return text(`足せませんでした：${e.message}`); }
   });
 
   server.registerTool('update_goal_position', {
