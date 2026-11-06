@@ -38,7 +38,7 @@ app.post('/line/webhook', express.raw({ type: '*/*', limit: '2mb' }), (req, res)
   try { body = JSON.parse(raw.toString('utf8')); } catch { return; }
   handleEvents(body.events).catch((e) => console.error('LINE', e));
 });
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '5mb' }));
 const dir = path.dirname(fileURLToPath(import.meta.url));
 app.use(express.static(path.join(dir, '..', 'public')));
 app.get('/health', (_req, res) => res.json({ ok: true, build: BUILD_TAG }));
@@ -105,16 +105,40 @@ api.use((req, res, next) => {
   }).catch(next);
 });
 api.get('/state', wrap(async (req, res) => res.json({ ...(await getState(req.uid)), aiEnabled, user: req.user })));
-api.post('/memos', express.text({ type: 'text/*', limit: '2mb' }), wrap(async (req, res) => {
+// 長い文字起こしを、文の切れ目で maxLen 字ほどずつに分ける
+function splitLongText(text, maxLen) {
+  if (text.length <= maxLen) return [text];
+  const out = []; let rest = text;
+  while (rest.length > maxLen) {
+    const win = rest.slice(0, maxLen);
+    let cut = Math.max(win.lastIndexOf('。'), win.lastIndexOf('\n'), win.lastIndexOf('？'), win.lastIndexOf('！'));
+    if (cut < maxLen * 0.6) cut = maxLen - 1;
+    out.push(rest.slice(0, cut + 1).trim()); rest = rest.slice(cut + 1);
+  }
+  if (rest.trim()) out.push(rest.trim());
+  return out;
+}
+api.post('/memos', express.text({ type: 'text/*', limit: '5mb' }), wrap(async (req, res) => {
   // ショートカットからは JSON {text, source:'voicememo'} か、本文そのもの（text/plain）で送れる
   const body = typeof req.body === 'string' ? { text: req.body, source: 'voicememo' } : (req.body || {});
   const text = String(body.text || '').trim();
   if (!text) return res.status(400).json({ error: '内容が空です' });
   if (body.source === 'voicememo') {
-    // iPhoneのボイスメモの文字起こし：同じ内容を二度送っても1件にする
-    const ref = 'voicememo:' + crypto.createHash('sha1').update(text).digest('hex').slice(0, 20);
-    const r = await addMemo(req.uid, text, 'voice', null, ref);
-    return res.json({ ok: true, duplicate: Boolean(r?.duplicate), message: r?.duplicate ? 'このボイスメモはもう送られています' : 'knowkinに送りました' });
+    // iPhoneのボイスメモの文字起こし。ref があればそれで、なければ本文から、同じ録音を二度入れない
+    const base = body.ref ? 'voicememo:' + String(body.ref).slice(0, 120)
+      : 'voicememo:' + crypto.createHash('sha1').update(text).digest('hex').slice(0, 20);
+    const head = String(body.title || '').trim().slice(0, 80);
+    // 長い録音（1日分など）は、およそ1時間分（1万2千字）ずつに分けて別のメモにする
+    const parts = splitLongText(text, 12000);
+    let added = 0, dup = 0;
+    for (let i = 0; i < parts.length; i++) {
+      const label = head || 'ボイスメモ';
+      const t = parts.length > 1 ? `【${label}（${i + 1}/${parts.length}）】\n${parts[i]}` : (head ? `【${label}】\n${parts[i]}` : parts[i]);
+      const r = await addMemo(req.uid, t, 'voice', null, parts.length > 1 ? `${base}#${i + 1}` : base);
+      if (r?.duplicate) dup++; else added++;
+    }
+    return res.json({ ok: true, parts: parts.length, added, duplicate: dup > 0 && added === 0,
+      message: added ? `knowkinに送りました（${parts.length}つに分けて${added}件）` : 'このボイスメモはもう送られています' });
   }
   const source = body.source === 'voice' ? 'voice' : 'text';
   res.json(await addMemo(req.uid, text, source));
