@@ -5,7 +5,7 @@ import cron from 'node-cron';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { migrate } from './db.js';
+import { migrate, pool } from './db.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
@@ -128,6 +128,12 @@ api.post('/memos', express.text({ type: 'text/*', limit: '5mb' }), wrap(async (r
     const base = body.ref ? 'voicememo:' + String(body.ref).slice(0, 120)
       : 'voicememo:' + crypto.createHash('sha1').update(text).digest('hex').slice(0, 20);
     const head = String(body.title || '').trim().slice(0, 80);
+    // ショートカットで同じ文字起こしをもう送っていたら、入れない
+    if (body.ref) {
+      const h = 'voicememo:' + crypto.createHash('sha1').update(text).digest('hex').slice(0, 20);
+      const { rows } = await pool.query('SELECT 1 FROM memos WHERE user_id = $1 AND ref = $2 LIMIT 1', [req.uid, h]);
+      if (rows.length) return res.json({ ok: true, parts: 0, added: 0, duplicate: true, message: 'このボイスメモはもうショートカットで送られています' });
+    }
     // 長い録音（1日分など）は、およそ1時間分（1万2千字）ずつに分けて別のメモにする
     const parts = splitLongText(text, 12000);
     let added = 0, dup = 0;

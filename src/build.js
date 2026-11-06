@@ -1,2 +1,2 @@
 // dev/deploy.py がデプロイのたびに書き換える
-export const BUILD_TAG = '20261106-232845';
+export const BUILD_TAG = '20261107-000518';
