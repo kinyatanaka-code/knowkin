@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { pool } from './db.js';
 
-const SESSION_DAYS = 60;
+const SESSION_DAYS = 365;
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
 const randomToken = (n = 32) => crypto.randomBytes(n).toString('base64url');
 
@@ -90,8 +90,13 @@ export async function userFromSession(token) {
   if (!token) return null;
   const { rows } = await pool.query(
     `SELECT u.* FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = $1 AND s.expires_at > now()`, [sha256(token)]);
-  return rows[0] ? publicUser(rows[0]) : null;
+  if (!rows[0]) return null;
+  // 使っている間は期限を延ばす（1日1回まで）。使い続ける限りログアウトされない
+  pool.query(`UPDATE sessions SET expires_at = now() + interval '${SESSION_DAYS} days'
+    WHERE token_hash = $1 AND expires_at < now() + interval '${SESSION_DAYS - 1} days'`, [sha256(token)]).catch(() => {});
+  return publicUser(rows[0]);
 }
+export const SESSION_MAX_AGE = SESSION_DAYS * 86400;
 export async function userFromLinkToken(token) {
   if (!token) return null;
   const { rows } = await pool.query('SELECT * FROM users WHERE link_token = $1', [token]);

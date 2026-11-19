@@ -14,6 +14,7 @@ import {
 import {
   changePassword, clearFailures, createSession, createUser, destroySession, firstUser, getLinkToken, login, noteFailure,
   rotateLinkToken, signupState, tooManyAttempts, userFromLinkToken, userFromSession,
+  SESSION_MAX_AGE,
 } from './auth.js';
 import { buildMcpServer } from './mcp.js';
 import { getGrowth, rateQuiz, requestQuiz } from './growth.js';
@@ -69,6 +70,9 @@ async function currentUser(req) {
 const authApi = express.Router();
 authApi.get('/status', wrap(async (req, res) => {
   const user = await currentUser(req);
+  // ログイン中なら、クッキーの期限も開くたびに延ばす
+  const tok = readCookie(req, COOKIE);
+  if (user && tok && !(req.get('authorization') || '').startsWith('Bearer ')) setSessionCookie(req, res, tok, SESSION_MAX_AGE);
   res.json({ user, signup: await signupState() });
 }));
 authApi.post('/signup', wrap(async (req, res) => {

@@ -421,16 +421,16 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
       <button type="button" role="tab" data-auth="login" aria-selected="true">ログイン</button>
       <button type="button" role="tab" data-auth="signup" aria-selected="false">アカウントを作る</button>
     </div>
-    <div class="sheet">
-      <label class="field" id="f-name" hidden><span>名前</span><input id="a-name" type="text" autocomplete="name"></label>
-      <label class="field"><span>メールアドレス</span><input id="a-email" type="email" autocomplete="email" inputmode="email"></label>
-      <label class="field"><span>パスワード</span><input id="a-pass" type="password" autocomplete="current-password"></label>
+    <form class="sheet" id="authForm" method="post" action="/" autocomplete="on">
+      <label class="field" id="f-name" hidden><span>名前</span><input id="a-name" name="name" type="text" autocomplete="name"></label>
+      <label class="field"><span>メールアドレス</span><input id="a-email" name="email" type="email" autocomplete="username" inputmode="email"></label>
+      <label class="field"><span>パスワード</span><input id="a-pass" name="password" type="password" autocomplete="current-password"></label>
       <p class="hint" id="a-passhint" hidden>8文字以上</p>
-      <label class="field" id="f-code" hidden><span>招待コード</span><input id="a-code" type="text" autocomplete="off"></label>
-      <div class="actions" style="justify-content:stretch"><button class="primary wide" type="button" id="authBtn">ログイン</button></div>
+      <label class="field" id="f-code" hidden><span>招待コード</span><input id="a-code" name="code" type="text" autocomplete="off"></label>
+      <div class="actions" style="justify-content:stretch"><button class="primary wide" type="submit" id="authBtn">ログイン</button></div>
       <p class="status err" id="authErr"></p>
       <p class="hint" id="authNote"></p>
-    </div>
+    </form>
   </section>
 
   <main id="app" hidden>
@@ -500,6 +500,8 @@ async function submitAuth(){
   catch(e){$('authErr').textContent=e.message;}
   $('authBtn').disabled=false;
 }
+// ブラウザにパスワードを覚えてもらうため、本物のフォームの送信として扱う
+document.addEventListener('submit',e=>{if(e.target.id==='authForm'){e.preventDefault();submitAuth();}});
 async function boot(){
   try{const s=await api('/api/auth/status');signup=s.signup||signup;
     if(s.user){
@@ -1506,7 +1508,6 @@ document.addEventListener('click',async e=>{
   const t=e.target.closest('button,input[type=checkbox]');if(!t)return;
   try{
     if(t.dataset.auth){setAuthMode(t.dataset.auth);return;}
-    if(t.id==='authBtn'){submitAuth();return;}
     if(t.id==='logout'){await api('/api/auth/logout',{method:'POST'});state={units:[],failed:[],core:null,recordings:[]};ui.view='rec';authMode='login';showLogin();return;}
     if(t.id==='rotate'){if(ui.armed!=='rotate'){ui.armed='rotate';t.textContent='もう一度押すと作り直します（今のURLは使えなくなります）';t.classList.add('on');return;}
       ui.armed=null;await api('/api/account/rotate',{method:'POST'});ui.account=null;setStatus('連携キーを作り直しました。Claude.aiのコネクタURLも新しいものに変えてください。');render();return;}
