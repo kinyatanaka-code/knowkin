@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { migrate, pool } from './db.js';
+import { buildExportFiles, exportConfig, exportToGitHub } from './github-export.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
@@ -172,6 +173,12 @@ api.get('/account', wrap(async (req, res) => {
   res.json({ user: req.user, mcpUrl: `${base}/mcp`, keyUrl: `${base}/mcp/${key}`, voiceUrl: `${base}/api/voice`, key,
     google: { enabled: googleEnabled, ...(await googleStatus(req.uid)) } });
 }));
+// ---- GitHubへの書き出し（コネクタが使えないAIに読ませる用） ----
+api.get('/export/preview', wrap(async (req, res) => { res.json({ config: { repo: exportConfig().repo, ready: exportConfig().ready }, files: await buildExportFiles(req.uid) }); }));
+api.post('/export/github', wrap(async (req, res) => {
+  try { const written = await exportToGitHub(req.uid); res.json({ ok: true, written }); }
+  catch (e) { res.status(400).json({ error: e.message }); }
+}));
 api.post('/account/rotate', wrap(async (req, res) => { await rotateLinkToken(req.uid); res.json({ ok: true }); }));
 api.post('/account/disconnect', wrap(async (req, res) => { await revokeAllTokens(req.uid); res.json({ ok: true }); }));
 api.post('/account/password', wrap(async (req, res) => {
@@ -326,6 +333,16 @@ app.delete('/mcp/:key', notAllowed);
 
 // ---- Gmail・Googleチャットの取り込み：毎時30分（3時間ごとの整理ルーティンの前に貯めておく） ----
 cron.schedule('30 * * * *', () => { syncAll().catch((e) => console.error('google sync failed', e)); }, { timezone: 'Asia/Tokyo' });
+
+// ---- GitHubへの書き出し：毎時40分（設定されているときだけ。持ち主＝最初のアカウント） ----
+cron.schedule('40 * * * *', async () => {
+  if (!exportConfig().ready) return;
+  try {
+    const u = await firstUser(); if (!u) return;
+    const w = await exportToGitHub(u.id);
+    if (w.length) console.log(`GitHubに書き出し：${w.join(', ')}`);
+  } catch (e) { console.error('github export failed', e.message); }
+}, { timezone: 'Asia/Tokyo' });
 
 // ---- 目的の足あと：毎日23:50に進み具合を記録 ----
 cron.schedule('50 23 * * *', () => { snapshotGoals().catch((e) => console.error('goal snapshot failed', e)); }, { timezone: 'Asia/Tokyo' });
