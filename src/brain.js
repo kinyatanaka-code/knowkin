@@ -644,7 +644,9 @@ export async function getState(uid) {
             (SELECT count(*)::int FROM brain_quiz WHERE user_id = $1 AND rating IS NULL) AS quiz,
             (SELECT count(*)::int FROM memos WHERE user_id = $1 AND NOT classified) AS memos,
             (SELECT core_request_at FROM users WHERE id = $1) AS core_req,
-            (SELECT quiz_request_at FROM users WHERE id = $1) AS quiz_req`, [uid])).rows[0];
+            (SELECT quiz_request_at FROM users WHERE id = $1) AS quiz_req,
+            (SELECT count(*)::int FROM biz_records WHERE user_id = $1) AS biz_records,
+            (SELECT count(DISTINCT company_key)::int FROM biz_records WHERE user_id = $1) AS biz_companies`, [uid])).rows[0];
   return { units: units.rows, failed: failed.rows, core, recordings, photos, categories, goals, aiMemos, aiNames: AI_SOURCES, pending: pend, canSummarizeAudio, canTranscribe };
 }
 

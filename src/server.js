@@ -6,6 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { migrate, pool } from './db.js';
+import { companyDetail, kinbotStatus, listCompanies, syncKinbot } from './kinbot-sync.js';
 import { buildExportFiles, buildExportText, exportConfig, exportToGitHub } from './github-export.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
@@ -187,6 +188,11 @@ api.get('/account', wrap(async (req, res) => {
 }));
 // ---- GitHubへの書き出し（コネクタが使えないAIに読ませる用） ----
 // まとめたテキスト（Apps ScriptからGoogleドキュメントに書き出してGeminiのスキルに読ませる）。連携キーの Bearer で読める
+// 企業情報（kinbot・kincall・kinXsから取り込んだ記録と、企業についての記憶）
+api.get('/companies', wrap(async (req, res) => res.json(await listCompanies(req.uid, String(req.query.q || '').trim().slice(0, 60)))));
+api.get('/companies/:key', wrap(async (req, res) => res.json(await companyDetail(req.uid, String(req.params.key).slice(0, 100)))));
+api.get('/kinbot/status', wrap(async (req, res) => res.json(await kinbotStatus(req.uid))));
+api.post('/kinbot/sync', wrap(async (req, res) => res.json(await syncKinbot(req.uid, { maxPages: 4 }))));
 api.get('/export/text', wrap(async (req, res) => res.type('text/plain; charset=utf-8').send(await buildExportText(req.uid))));
 api.get('/export/preview', wrap(async (req, res) => { res.json({ config: { repo: exportConfig().repo, ready: exportConfig().ready }, files: await buildExportFiles(req.uid) }); }));
 api.post('/export/github', wrap(async (req, res) => {
@@ -369,6 +375,11 @@ cron.schedule('40 * * * *', async () => {
 }, { timezone: 'Asia/Tokyo' });
 
 // ---- 目的の足あと：毎日23:50に進み具合を記録 ----
+// kinbot・kincall・kinXs の取り込み：毎時15分（過去分は1回あたり種類ごとに最大5,000件ずつ進む）
+cron.schedule('15 * * * *', async () => {
+  try { const u = await firstUser(); if (u) console.log('kinbot sync', JSON.stringify(await syncKinbot(u.id))); }
+  catch (e) { console.error('kinbot sync failed', e); }
+}, { timezone: 'Asia/Tokyo' });
 cron.schedule('50 23 * * *', () => { snapshotGoals().catch((e) => console.error('goal snapshot failed', e)); }, { timezone: 'Asia/Tokyo' });
 
 // ---- 夜間バッチ：毎日3時（日本時間）に核を育て直す（サーバー側のAIを使う場合のみ） ----

@@ -216,3 +216,32 @@ ALTER TABLE units ADD COLUMN IF NOT EXISTS realm_checked BOOLEAN NOT NULL DEFAUL
 UPDATE units SET realm_checked = TRUE WHERE NOT realm_checked AND type IN ('task','goal');
 CREATE INDEX IF NOT EXISTS units_realm_idx ON units(user_id, realm);
 CREATE INDEX IF NOT EXISTS memos_source_idx ON memos(user_id, source);
+
+-- 業務ツール（kinbot・kincall・kinXs）から取り込んだ記録。企業情報に会社ごとに並べる（記憶ユニットとは分けて持つ。量が多いので画面の記憶一覧を埋めないため）
+CREATE TABLE IF NOT EXISTS biz_records (
+  id          SERIAL PRIMARY KEY,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ref         TEXT NOT NULL,                  -- 取り込み元の識別子（同じものは上書き）
+  source      TEXT NOT NULL DEFAULT 'kinbot', -- kinbot / kincall / kinxs
+  kind        TEXT NOT NULL DEFAULT '',       -- 商談・架電・DOC契約 など
+  company     TEXT NOT NULL DEFAULT '',
+  company_key TEXT NOT NULL DEFAULT '',       -- 「株式会社」などを外した、まとめる用の名前
+  title       TEXT NOT NULL DEFAULT '',
+  body        TEXT NOT NULL DEFAULT '',
+  people      TEXT[] NOT NULL DEFAULT '{}',
+  at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (user_id, ref)
+);
+CREATE INDEX IF NOT EXISTS biz_records_co_idx ON biz_records(user_id, company_key, at DESC);
+CREATE INDEX IF NOT EXISTS biz_records_at_idx ON biz_records(user_id, at DESC);
+CREATE TABLE IF NOT EXISTS biz_sync (
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        TEXT NOT NULL,
+  cursor      TEXT NOT NULL DEFAULT '',
+  total       INTEGER NOT NULL DEFAULT 0,
+  done        BOOLEAN NOT NULL DEFAULT FALSE,  -- 過去分を取り終えたか
+  last_at     TIMESTAMPTZ,
+  last_error  TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (user_id, kind)
+);

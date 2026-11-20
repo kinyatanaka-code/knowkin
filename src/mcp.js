@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { addQuiz, getGrowth, openQuiz, quizMaterial, quizNeeded, rateQuiz } from './growth.js';
 import { getBriefing } from './briefing.js';
+import { companyDetail, companyKey, kinbotConfig, listCompanies, searchBiz } from './kinbot-sync.js';
 import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, renameMilestone, setGoalNote, updateGoal, addMilestones } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
@@ -112,7 +113,30 @@ export function buildMcpServer(uid, { ai = '' } = {}) {
     annotations: { readOnlyHint: true },
   }, async (args) => {
     const rows = await searchUnits(uid, args);
-    return text(rows.length ? rows.map(unitLine).join('\n') : '該当する記憶はありません。');
+    const biz = args.query && !args.type && !args.person ? await searchBiz(uid, args.query, 10) : [];
+    const bizPart = biz.length ? `\n\n## 企業情報（kinbot・kincall・kinXsの記録。詳しくは get_company）\n${biz.map((b) => `- ${b.day} [${b.kind}] ${b.company}：${b.title}${b.body ? ' … ' + b.body.replace(/\n/g, ' ').slice(0, 160) : ''}`).join('\n')}` : '';
+    return text((rows.length ? rows.map(unitLine).join('\n') : '該当する記憶はありません。') + bizPart);
+  });
+
+  server.registerTool('get_company', {
+    title: '企業情報（会社ごとの商談・架電・DOCの状況）',
+    description: '顧客企業について、kinbot（商談の要約・商談の動き・資料の閲覧）、kincall（架電の結果とメモ）、kinXs（DOCの契約状況・変更・お客様の声・候補者の質問）から取り込んだ記録と、企業についての記憶を新しい順に返す。'
+      + '会社名が話題に出たら、提案・商談準備・フォローの前に使うこと。name を空にすると、最近動きのあった企業の一覧を返す。',
+    inputSchema: { name: z.string().optional().describe('会社名（「株式会社」はなくてよい。一部でも可）'), limit: z.number().int().min(1).max(200).optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ name, limit }) => {
+    const q = String(name || '').trim();
+    const cos = await listCompanies(uid, q);
+    if (!q) return text(cos.length ? `# 最近動きのあった企業\n${cos.slice(0, 60).map((c) => `- ${c.company}（${c.n}件・最新 ${String(c.last_at).slice(0, 10)}）：${c.latest}`).join('\n')}` : '企業情報はまだありません。');
+    const hit = cos.find((c) => c.key === companyKey(q)) || cos[0];
+    if (!hit) return text(`「${q}」の企業情報は見つかりませんでした。`);
+    const recs = await companyDetail(uid, hit.key, limit || 60);
+    const mem = (await searchUnits(uid, { query: hit.company, limit: 20 })).filter((u) => u.realm === 'company');
+    const others = cos.filter((c) => c !== hit).slice(0, 5).map((c) => c.company);
+    return text([`# ${hit.company}（記録 ${hit.n}件）`,
+      ...recs.map((r) => `## ${r.at_jst} [${r.kind}] ${r.title}${r.people?.length ? `（${r.people.join('、')}）` : ''}\n${r.body}`),
+      mem.length ? `\n## 企業についての記憶\n${mem.map(unitLine).join('\n')}` : '',
+      others.length ? `\n（ほかに名前が近い企業：${others.join('、')}）` : ''].filter(Boolean).join('\n'));
   });
 
   server.registerTool('get_recent_recordings', {
@@ -187,7 +211,8 @@ export function buildMcpServer(uid, { ai = '' } = {}) {
     const up = await upkeepNeeds(uid);
     // kinbot・kincallから前日分を学ぶ（Claudeがkinbot・kincallのコネクタを使える場合）
     const y = new Date(Date.now() + 9 * 3600000 - 86400000).toISOString().slice(0, 10);
-    const kRefs = [`kinbot:daily:${y}`, `kinbot:mine:${y}`, `kincall:daily:${y}`, `kinxs:daily:${y}`];
+    // kinbot から直接取り込んでいるときは、チーム・架電・DOCユーザーの要点はそちらに入るので、本人の商談の振り返りだけ頼む
+    const kRefs = kinbotConfig().ready ? [`kinbot:mine:${y}`] : [`kinbot:daily:${y}`, `kinbot:mine:${y}`, `kincall:daily:${y}`, `kinxs:daily:${y}`];
     const kDone = new Set(await importedRefs(uid, kRefs));
     const kTodo = kRefs.filter((r) => !kDone.has(r));
     const kinPart = kTodo.length ? `

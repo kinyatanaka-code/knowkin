@@ -16,7 +16,7 @@ export function exportConfig() {
 }
 
 export async function buildExportFiles(uid) {
-  const [core, tasks, goals, briefing, { rows: recent }, { rows: biz }] = await Promise.all([
+  const [core, tasks, goals, briefing, { rows: recent }, { rows: biz }, { rows: recs }] = await Promise.all([
     getCore(uid), getOpenTasks(uid), getGoals(uid), getBriefing(uid),
     pool.query(`SELECT type, content, reason, people, to_char(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS d
       FROM units WHERE user_id = $1 AND relevance = 'direct' AND realm = 'self' AND type IN ('event','decision','lesson','idea','value','question','person','input')
@@ -24,6 +24,10 @@ export async function buildExportFiles(uid) {
       ORDER BY created_at DESC LIMIT 300`, [uid]),
     pool.query(`SELECT realm, company, genre, type, content, to_char(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS d
       FROM units WHERE user_id = $1 AND realm IN ('company','nc') ORDER BY created_at DESC LIMIT 1500`, [uid]),
+    // kinbot・kincall・kinXsの記録：最近動きのあった80社について、新しい順に6件ずつ
+    pool.query(`WITH c AS (SELECT company_key FROM biz_records WHERE user_id = $1 AND company_key <> '' GROUP BY company_key ORDER BY max(at) DESC LIMIT 80),
+        r AS (SELECT b.*, row_number() OVER (PARTITION BY b.company_key ORDER BY b.at DESC) AS rn FROM biz_records b JOIN c USING (company_key) WHERE b.user_id = $1)
+      SELECT company, company_key, kind, title, left(body, 220) AS body, to_char(at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS d FROM r WHERE rn <= 6 ORDER BY company_key, at DESC`, [uid]).catch(() => ({ rows: [] })),
   ]);
   const stamp = jstNow();
   const act = goals.filter((g) => g.status === 'active');
@@ -79,6 +83,7 @@ export async function buildExportFiles(uid) {
   const C = ['# 企業情報（顧客企業ごと・新しい順）', ''];
   const byCo = new Map();
   for (const r of biz.filter((x) => x.realm === 'company')) { const k = r.company || '会社名なし'; if (!byCo.has(k)) byCo.set(k, []); byCo.get(k).push(r); }
+  for (const r of recs) { const k = r.company || '会社名なし'; if (!byCo.has(k)) byCo.set(k, []); byCo.get(k).push({ d: r.d, type: r.kind, content: `${r.title}${r.body ? '：' + r.body.replace(/\n/g, ' ') : ''}` }); }
   if (!byCo.size) C.push('まだありません。');
   for (const [co, list] of byCo) { C.push(`## ${co}`); for (const r of list.slice(0, 30)) C.push(`- ${r.d} [${TYPE[r.type] || r.type}] ${r.content}`); C.push(''); }
   const K = ['# ネオキャリアナレッジ（全社）', ''];

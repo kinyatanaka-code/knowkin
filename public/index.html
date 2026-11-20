@@ -718,8 +718,9 @@ function renderOrgs(){
   const el=$('orgs');if(!el)return;
   const all=(state.units||[]).filter(u=>!isPeri(u));
   const co=all.filter(u=>u.realm==='company');const nc=all.filter(u=>u.realm==='nc');
-  const nCo=new Set(co.map(u=>u.company||'')).size;
-  const n={company:co.length?`${nCo}社・${co.length}件`:'まだありません',nc:nc.length?`${nc.length}件`:'まだありません'};
+  const pd=(state&&state.pending)||{};
+  const nCo=Math.max(pd.biz_companies||0,new Set(co.map(u=>u.company||'')).size);const nRec=(pd.biz_records||0)+co.length;
+  const n={company:nRec?`${nCo.toLocaleString()}社・${nRec.toLocaleString()}件`:'まだありません',nc:nc.length?`${nc.length}件`:'まだありません'};
   el.innerHTML=`<p class="orgs-cap"><span>脳の外：みんなと育てる知識</span><span>いまは自分だけに見えます</span></p>
     <div class="orgs-grid">${ORGS.map(o=>`<button type="button" class="org" data-node="${o.id}" aria-pressed="${ui.view==='layer'&&ui.layer===o.id}" style="--c:${lcol(o.id)}">
       <span class="org-sub">${o.sub}</span><span class="org-name">${ORG_NAME[o.id]}</span><span class="org-n">${n[o.id]}</span></button>`).join('')}</div>`;
@@ -1367,6 +1368,7 @@ function renderActView(){
 function renderLayer(p){
   if(ui.layer==='act'&&!ui.q){ui.view='rec';openAct();return renderRec(p);}
   if(ui.layer==='ai')return renderAi(p);
+  if(ui.layer==='company')return renderCompanies(p);
   const l=allLayers().find(x=>x.id===ui.layer)||LAYERS[0];
   const inLayer=cats().filter(c=>T(c.key).layer===l.id);
   const info=(LAYER_INFO[l.id]||'自動で作られた層です')+(inLayer.length?`。自動で作ったカテゴリ：${inLayer.map(c=>c.label).join('、')}`:'');
@@ -1375,6 +1377,47 @@ function renderLayer(p){
   const qi=$('q');qi.value=ui.q;qi.addEventListener('input',e=>{ui.q=e.target.value;renderMemList();});
   renderMemList();
 }
+// ---- 企業情報：kinbot・kincall・kinXs の記録と、企業についての記憶を会社ごとに ----
+const coKey=n=>String(n||'').normalize('NFKC').replace(/(株式会社|有限会社|合同会社|一般社団法人|一般財団法人|公益社団法人|公益財団法人|社会福祉法人|医療法人社団|医療法人|学校法人|\(株\)|（株）|\(有\)|（有）|様|御中)/g,'').replace(/[\s・\-ー_]/g,'').toLowerCase().slice(0,80);
+const KIND_COL={'商談':'#7EE08A','商談の動き':'#5CD2FF','架電':'#FF6FC8','DOC契約':'#F5D76E','DOC契約の変更':'#FFB86B','お客様の声':'#B07CFF','候補者の質問':'#6F9BFF','資料の閲覧':'#4FE3C1','記憶':'#94A3CC'};
+async function loadCompanies(force){
+  if(ui.companies&&!force&&ui.companiesQ===ui.q)return;
+  ui.companiesQ=ui.q;
+  try{ui.companies=await api('/api/companies'+(ui.q.trim()?'?q='+encodeURIComponent(ui.q.trim()):''));}catch(e){ui.companies=[];setStatus(e.message,true);}
+}
+function renderCompanies(p){
+  const col=lcol('company');
+  if(ui.coOpen){
+    const d=ui.coDetail&&ui.coDetail.key===ui.coOpen?ui.coDetail:null;
+    const c=(ui.companies||[]).find(x=>x.key===ui.coOpen);
+    const mem=(state.units||[]).filter(u=>u.realm==='company'&&coKey(u.company)===ui.coOpen);
+    p.innerHTML=`<h2>企業情報</h2><button class="back" type="button" data-coopen="">← 企業の一覧</button>
+      <div class="drawer-head" style="--c:${col}"><h3>${esc(c?c.company:'')}</h3><span>${d?d.recs.length+mem.length:''}件</span></div>
+      ${mem.length?`<h4>企業についての記憶</h4><ul class="list">${mem.map(u=>unitHTML(u)).join('')}</ul>`:''}
+      ${d?(d.recs.length?`<h4>kinbot・kincall・kinXs の記録</h4><ul class="ai-list">${d.recs.map(r=>`<li class="ai-item" style="--c:${KIND_COL[r.kind]||col}">
+          <span class="ai-top"><span class="ai-badge">${esc(r.kind)}</span><span>${esc(r.at_jst)}</span>${r.people&&r.people.length?`<span>${esc(r.people.join('、'))}</span>`:''}</span>
+          <p class="ai-prev" style="-webkit-line-clamp:unset;font-weight:700">${esc(r.title)}</p>${r.body?`<p class="hint" style="white-space:pre-wrap;margin:6px 0 0">${esc(r.body)}</p>`:''}</li>`).join('')}</ul>`:'')
+        :'<p class="empty">読み込んでいます…</p>'}`;
+    if(!d)api('/api/companies/'+encodeURIComponent(ui.coOpen)).then(recs=>{ui.coDetail={key:ui.coOpen,recs};if(ui.view==='layer'&&ui.layer==='company')renderCompanies(p);}).catch(e=>setStatus(e.message,true));
+    return;
+  }
+  const st=ui.kinbotStatus;
+  p.innerHTML=`<h2>企業情報</h2><p class="lead">${esc(LAYER_INFO.company)}</p>
+    <p class="hint" id="kbst">${st?(st.ready?`kinbot・kincall・kinXs から ${st.companies.toLocaleString()}社・${st.records.toLocaleString()}件を取り込み済み。${st.kinds.some(k=>!k.done)?'過去の分を1時間ごとに少しずつ取り込んでいます。':'毎時15分に新しい分を取り込みます。'}${st.kinds.filter(k=>k.last_error).map(k=>`（${esc(k.label)}：${esc(k.last_error)}）`).join('')} <button type="button" class="linkbtn" id="kbsync">今すぐ取り込む</button>`
+      :'kinbot・kincall・kinXs からの取り込みは、まだ設定されていません（Railway の KINBOT_URL と KINBOT_TOKEN）。'):'取り込みの状況を確かめています…'}</p>
+    <input class="search" id="q" type="search" placeholder="会社名・内容で探す" aria-label="企業情報を探す"><div id="colist"><p class="empty">読み込んでいます…</p></div>`;
+  const qi=$('q');qi.value=ui.q;let tm=0;qi.addEventListener('input',e=>{ui.q=e.target.value;clearTimeout(tm);tm=setTimeout(async()=>{await loadCompanies();renderCoList();},300);});
+  if(!st)api('/api/kinbot/status').then(x=>{ui.kinbotStatus=x;if(ui.view==='layer'&&ui.layer==='company'&&!ui.coOpen)renderCompanies(p);}).catch(()=>{});
+  loadCompanies().then(renderCoList);
+}
+function renderCoList(){
+  const box=$('colist');if(!box)return;const col=lcol('company');const list=ui.companies||[];
+  box.innerHTML=list.length?`<div class="drawers">${list.slice(0,300).map(c=>`<button type="button" class="drawer" data-coopen="${esc(c.key)}" style="--c:${col}">
+      <span class="drawer-top"><span class="drawer-name">${esc(c.company||'会社名なし')}</span><span class="drawer-n">${c.n}</span></span>
+      <span class="drawer-prev">${esc(String(c.last_at||'').slice(0,10))}　${esc(c.latest||'')}</span></button>`).join('')}</div>`
+    :`<p class="empty">${ui.q.trim()?'条件に合う企業はありません。':'まだ企業情報はありません。'}</p>`;
+}
+
 // ---- AI履歴：AIとの会話（原本）を、AIごとに見る・貼り付けて残す ----
 function renderAi(p){
   const all=(state&&state.aiMemos)||[];const col=lcol('ai');
@@ -1658,6 +1701,8 @@ document.addEventListener('click',async e=>{
     if(t.dataset.tshift!==undefined){const n=Number(t.dataset.tshift);ui.tdate=n===0?new Date():shiftDate(ui.tscope||'day',ui.tdate||new Date(),n);render();return;}
     if(t.id==='t-add'){addTaskUI();return;}
     if(t.dataset.area){const u=localUnit(t.dataset.area);const a=areaOf(u)==='life'?'work':'life';u.area=a;render();await patch(u.id,{area:a});return;}
+    if(t.dataset.coopen!==undefined){ui.coOpen=t.dataset.coopen||null;ui.coDetail=null;renderCompanies($('panel'));$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
+    if(t.id==='kbsync'){t.disabled=true;setStatus('kinbot から取り込んでいます…');try{const r=await api('/api/kinbot/sync',{method:'POST'});setStatus(r.skipped?r.skipped:'取り込みました。');}finally{ui.kinbotStatus=null;ui.companies=null;await load();}return;}
     if(t.dataset.aiopen!==undefined){ui.aiOpen=t.dataset.aiopen?Number(t.dataset.aiopen):null;renderAi($('panel'));$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.dataset.aifilter!==undefined){ui.aiFilter=t.dataset.aifilter;renderAi($('panel'));return;}
     if(t.id==='ai-save'){t.disabled=true;try{await saveAiPaste();}finally{t.disabled=false;}return;}
@@ -1665,7 +1710,7 @@ document.addEventListener('click',async e=>{
     if(t.dataset.view||t.dataset.node){
       if((recorder&&recorder.state==='recording')||live){setStatus('録音中です。止めてから切り替えてください。',true);return;}
       if(prog){setStatus('アップロードの処理中です。終わるまでこのままお待ちください。',true);return;}
-      if(t.dataset.node){if(ui.layer!==t.dataset.node){ui.q='';ui.drawer=null;ui.aiOpen=null;}ui.view='layer';ui.layer=t.dataset.node;}else ui.view=t.dataset.view;
+      if(t.dataset.node){if(ui.layer!==t.dataset.node){ui.q='';ui.drawer=null;ui.aiOpen=null;ui.coOpen=null;ui.companies=null;}ui.view='layer';ui.layer=t.dataset.node;}else ui.view=t.dataset.view;
       ui.armed=null;if(ui.view!=='rec')ui.result=null;if(ui.view==='growth')ui.growth=null;setStatus('');render();
       if(window.innerWidth<700)$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.id==='recbtn'){if(state.canSummarizeAudio||state.canTranscribe)toggleRecord();else toggleLive();return;}
