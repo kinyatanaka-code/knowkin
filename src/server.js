@@ -6,7 +6,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { migrate, pool } from './db.js';
-import { buildExportFiles, exportConfig, exportToGitHub } from './github-export.js';
+import { buildExportFiles, buildExportText, exportConfig, exportToGitHub } from './github-export.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
@@ -186,6 +186,8 @@ api.get('/account', wrap(async (req, res) => {
     google: { enabled: googleEnabled, ...(await googleStatus(req.uid)) } });
 }));
 // ---- GitHubへの書き出し（コネクタが使えないAIに読ませる用） ----
+// まとめたテキスト（Apps ScriptからGoogleドキュメントに書き出してGeminiのスキルに読ませる）。連携キーの Bearer で読める
+api.get('/export/text', wrap(async (req, res) => res.type('text/plain; charset=utf-8').send(await buildExportText(req.uid))));
 api.get('/export/preview', wrap(async (req, res) => { res.json({ config: { repo: exportConfig().repo, ready: exportConfig().ready }, files: await buildExportFiles(req.uid) }); }));
 api.post('/export/github', wrap(async (req, res) => {
   try { const written = await exportToGitHub(req.uid); res.json({ ok: true, written }); }

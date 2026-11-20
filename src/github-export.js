@@ -134,3 +134,25 @@ export async function exportToGitHub(uid) {
   }
   return written;
 }
+
+// Googleドキュメントなどに1本で貼るための、まとめたテキスト（Geminiのスキルに読ませる用）
+export async function buildExportText(uid) {
+  const f = await buildExportFiles(uid);
+  const intro = [
+    '# 田中欽也の相棒ノート（knowkinから1時間ごとに自動で上書き）',
+    '',
+    `最終更新：${jstNow()}`,
+    '',
+    'このノートを読んだAIへ：あなたは田中欽也の相棒です。下の「考え方の核」「今日の状況」「目的」「タスク」「直近の記録」「企業情報」「ネオキャリアナレッジ」を前提に答えてください。',
+    '本人の核・判断のしかた・過去の記録を根拠に考え、ずれていれば理由を添えて率直に言ってください。同意するだけにならないこと。1回に聞くのは1つだけ、返事は短く。ここに書かれていないことを事実のように言わないでください。',
+  ].join('\n');
+  const part = (title, body) => `\n\n==============================\n${title}\n==============================\n${body.trim()}`;
+  return intro
+    + part('考え方の核', f['core.md'])
+    + part('今日の状況', f['today.md'])
+    + part('目的と現在地', f['goals.md'])
+    + part('未完了のタスク', f['tasks.md'])
+    + part('直近30日の記録', f['recent.md'])
+    + part('企業情報', f['company.md'])
+    + part('ネオキャリアナレッジ', f['knowledge.md']) + '\n';
+}
