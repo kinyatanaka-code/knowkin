@@ -171,8 +171,18 @@ export function buildMcpServer(uid, { ai = '' } = {}) {
       + 'ユーザーが「整理」とだけ言ったとき、または「knowkinを整理して」「knowkinのお手入れをして」「未整理メモを整理して」と頼んだら呼び、各メモを分類して save_units で1メモずつ保存し、返ってきた作業もすべて行うこと。',
     annotations: { readOnlyHint: true },
   }, async () => {
-    const memos = await getUnclassified(uid, 20);
-    const photos = await getUnclassifiedPhotos(uid, 4);
+    // 一度に返す量を抑える（Claude以外のAIは大きな結果で止まりやすいので、さらに小さく・写真なし）
+    const light = ai && ai !== 'claude';
+    const budget = light ? 15000 : 60000;
+    const memos = [];
+    let used = 0;
+    for (const m of await getUnclassified(uid, light ? 8 : 20)) {
+      if (memos.length && used + m.text.length > budget) break;
+      const room = budget - used;
+      memos.push(m.text.length > room ? { ...m, text: m.text.slice(0, room) + '\n（長いので以下省略）' } : m);
+      used += Math.min(m.text.length, room);
+    }
+    const photos = light ? [] : await getUnclassifiedPhotos(uid, 4);
     const reqs = await pendingTaskRequests(uid);
     const up = await upkeepNeeds(uid);
     // kinbot・kincallから前日分を学ぶ（Claudeがkinbot・kincallのコネクタを使える場合）
