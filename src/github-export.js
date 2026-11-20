@@ -16,12 +16,14 @@ export function exportConfig() {
 }
 
 export async function buildExportFiles(uid) {
-  const [core, tasks, goals, briefing, { rows: recent }] = await Promise.all([
+  const [core, tasks, goals, briefing, { rows: recent }, { rows: biz }] = await Promise.all([
     getCore(uid), getOpenTasks(uid), getGoals(uid), getBriefing(uid),
     pool.query(`SELECT type, content, reason, people, to_char(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS d
-      FROM units WHERE user_id = $1 AND relevance = 'direct' AND type IN ('event','decision','lesson','idea','value','question','person','input')
+      FROM units WHERE user_id = $1 AND relevance = 'direct' AND realm = 'self' AND type IN ('event','decision','lesson','idea','value','question','person','input')
         AND created_at > now() - interval '30 days'
       ORDER BY created_at DESC LIMIT 300`, [uid]),
+    pool.query(`SELECT realm, company, genre, type, content, to_char(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS d
+      FROM units WHERE user_id = $1 AND realm IN ('company','nc') ORDER BY created_at DESC LIMIT 1500`, [uid]),
   ]);
   const stamp = jstNow();
   const act = goals.filter((g) => g.status === 'active');
@@ -44,6 +46,8 @@ export async function buildExportFiles(uid) {
     '- `goals.md`：目的・道のり・現在地',
     '- `tasks.md`：未完了のタスク（期限順）',
     '- `recent.md`：直近30日の記録',
+    '- `company.md`：企業情報（顧客企業ごとの商談・状況）',
+    '- `knowledge.md`：ネオキャリアナレッジ（商材・社内ルールなど会社として共有できる知識）',
   ].join('\n');
 
   const coreMd = coreText(core, []).replace(/\n## 今の未完了タスク\nなし$/, '').trim();
@@ -72,7 +76,20 @@ export async function buildExportFiles(uid) {
     R.push(`- [${TYPE[r.type] || r.type}] ${r.content}${r.reason ? `（理由：${r.reason}）` : ''}`);
   }
 
+  const C = ['# 企業情報（顧客企業ごと・新しい順）', ''];
+  const byCo = new Map();
+  for (const r of biz.filter((x) => x.realm === 'company')) { const k = r.company || '会社名なし'; if (!byCo.has(k)) byCo.set(k, []); byCo.get(k).push(r); }
+  if (!byCo.size) C.push('まだありません。');
+  for (const [co, list] of byCo) { C.push(`## ${co}`); for (const r of list.slice(0, 30)) C.push(`- ${r.d} [${TYPE[r.type] || r.type}] ${r.content}`); C.push(''); }
+  const K = ['# ネオキャリアナレッジ（全社）', ''];
+  const byG = new Map();
+  for (const r of biz.filter((x) => x.realm === 'nc')) { const k = r.genre || 'その他'; if (!byG.has(k)) byG.set(k, []); byG.get(k).push(r); }
+  if (!byG.size) K.push('まだありません。');
+  for (const [g, list] of byG) { K.push(`## ${g}`); for (const r of list.slice(0, 60)) K.push(`- ${r.content}`); K.push(''); }
+
   return {
+    'company.md': C.join('\n') + '\n',
+    'knowledge.md': K.join('\n') + '\n',
     'README.md': readme + '\n',
     'core.md': coreMd + '\n',
     'today.md': briefing + '\n',

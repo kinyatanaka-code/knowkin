@@ -10,7 +10,7 @@ import { buildExportFiles, exportConfig, exportToGitHub } from './github-export.
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
-  addMemo, addPhoto, addTask, addVoice, requestCore, classifyMemoById, getPhoto, mergeCategory, updateCategory, deleteUnit, getState, growCore, growCoresIfChanged, updateUnit, coreText, getCore, getOpenTasks,
+  addMemo, addPhoto, addTask, addVoice, requestCore, classifyMemoById, getPhoto, mergeCategory, updateCategory, deleteUnit, getState, growCore, growCoresIfChanged, updateUnit, coreText, getCore, getOpenTasks, getMemo, AI_SOURCES,
 } from './brain.js';
 import {
   changePassword, clearFailures, createSession, createUser, destroySession, firstUser, getLinkToken, login, noteFailure,
@@ -21,7 +21,7 @@ import { buildMcpServer } from './mcp.js';
 import { getGrowth, rateQuiz, requestQuiz } from './growth.js';
 import { addMilestone, renameMilestone, requestTasks, setMilestone, snapshotGoals, updateGoal } from './goals.js';
 import { authUrl, googleEnabled, googleStatus, handleCallback, listSpaces, setSpaceExcluded, syncAll, syncUser, unlink } from './google.js';
-import { baseUrl, mcpUnauthorized, oauthRouter, revokeAllTokens, userIdFromAccessToken } from './oauth.js';
+import { baseUrl, clientNameFromAccessToken, mcpUnauthorized, oauthRouter, revokeAllTokens, userIdFromAccessToken } from './oauth.js';
 import { handleEvents, issueCode, lineStatus, unlinkLine, verifySignature } from './line.js';
 
 const { MCP_SECRET, PORT = 3000 } = process.env;
@@ -151,8 +151,20 @@ api.post('/memos', express.text({ type: 'text/*', limit: '5mb' }), wrap(async (r
     return res.json({ ok: true, parts: parts.length, added, duplicate: dup > 0 && added === 0,
       message: added ? `knowkinに送りました（${parts.length}つに分けて${added}件）` : 'このボイスメモはもう送られています' });
   }
+  // AIとの会話を貼り付けて残す（コネクタが使えない会社のGeminiなど）
+  if (AI_SOURCES[body.source]) {
+    const head = String(body.title || '').trim().slice(0, 80);
+    const r = await addMemo(req.uid, head ? `【${AI_SOURCES[body.source]}との会話：${head}】\n${text}` : text, body.source);
+    if (head && r.memo_id) await pool.query('UPDATE memos SET title = $1 WHERE id = $2 AND user_id = $3', [head, r.memo_id, req.uid]);
+    return res.json(r);
+  }
   const source = body.source === 'voice' ? 'voice' : 'text';
   res.json(await addMemo(req.uid, text, source));
+}));
+api.get('/memos/:id', wrap(async (req, res) => {
+  const m = await getMemo(req.uid, Number(req.params.id));
+  if (!m) return res.status(404).json({ error: '見つかりません' });
+  res.json(m);
 }));
 api.post('/memos/:id/classify', wrap(async (req, res) => res.json(await classifyMemoById(req.uid, Number(req.params.id)))));
 api.patch('/units/:id', wrap(async (req, res) => {
@@ -290,8 +302,18 @@ async function mcpUser(key) {
   if (MCP_SECRET && key === MCP_SECRET) return firstUser(); // アカウント機能を入れる前に登録したコネクタURL
   return userFromLinkToken(key);
 }
-async function serveMcp(uid, req, res) {
-  const server = buildMcpServer(uid);
+// コネクタを登録したAIの名前から、AI履歴の取り込み元を決める
+function aiKeyFromClient(name) {
+  const n = String(name || '').toLowerCase();
+  if (!n) return '';
+  if (n.includes('claude') || n.includes('anthropic')) return 'claude';
+  if (n.includes('chatgpt') || n.includes('openai')) return 'chatgpt';
+  if (n.includes('gemini') || n.includes('google')) return 'gemini';
+  if (n.includes('copilot') || n.includes('microsoft')) return 'copilot';
+  return 'ai';
+}
+async function serveMcp(uid, req, res, ai = '') {
+  const server = buildMcpServer(uid, { ai });
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on('close', () => { transport.close(); server.close(); });
   await server.connect(transport);
@@ -303,7 +325,7 @@ app.post('/mcp', async (req, res) => {
     const h = req.get('authorization') || '';
     const uid = h.startsWith('Bearer ') ? await userIdFromAccessToken(h.slice(7)) : null;
     if (!uid) return mcpUnauthorized(req, res);
-    await serveMcp(uid, req, res);
+    await serveMcp(uid, req, res, aiKeyFromClient(await clientNameFromAccessToken(h.slice(7))));
   } catch (e) {
     console.error('MCP error', e);
     if (!res.headersSent) res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal error' }, id: null });

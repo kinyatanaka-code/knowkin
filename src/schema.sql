@@ -208,3 +208,11 @@ ALTER TABLE users ADD COLUMN IF NOT EXISTS line_user_id TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS line_code TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS line_code_expires TIMESTAMPTZ;
 CREATE UNIQUE INDEX IF NOT EXISTS users_line_user_id ON users(line_user_id) WHERE line_user_id IS NOT NULL;
+
+-- 置き場所：self（自分の脳）/ company（企業情報・部署内）/ nc（ネオキャリアナレッジ・全社）
+ALTER TABLE units ADD COLUMN IF NOT EXISTS realm TEXT NOT NULL DEFAULT 'self';
+ALTER TABLE units ADD COLUMN IF NOT EXISTS company TEXT NOT NULL DEFAULT '';      -- realm が company のときの会社名
+ALTER TABLE units ADD COLUMN IF NOT EXISTS realm_checked BOOLEAN NOT NULL DEFAULT FALSE;
+UPDATE units SET realm_checked = TRUE WHERE NOT realm_checked AND type IN ('task','goal');
+CREATE INDEX IF NOT EXISTS units_realm_idx ON units(user_id, realm);
+CREATE INDEX IF NOT EXISTS memos_source_idx ON memos(user_id, source);

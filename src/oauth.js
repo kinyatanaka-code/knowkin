@@ -24,6 +24,15 @@ export async function userIdFromAccessToken(token) {
   return rows[0]?.user_id || null;
 }
 
+/** そのアクセストークンを使っているAI（コネクタを登録したクライアント）の名前 */
+export async function clientNameFromAccessToken(token) {
+  if (!token) return '';
+  const { rows } = await pool.query(
+    `SELECT c.client_name FROM oauth_tokens t JOIN oauth_clients c ON c.client_id = t.client_id
+     WHERE t.token_hash = $1 AND t.kind = 'access'`, [sha256(token)]);
+  return rows[0]?.client_name || '';
+}
+
 export function mcpUnauthorized(req, res) {
   res.set('WWW-Authenticate', `Bearer resource_metadata="${baseUrl(req)}/.well-known/oauth-protected-resource"`);
   res.status(401).json({ jsonrpc: '2.0', error: { code: -32001, message: 'Unauthorized' }, id: null });

@@ -19,7 +19,7 @@ export const TYPES = {
   person: { label: '人物', layer: '関係' },
 };
 
-export const UNIT_COLS = `id, memo_id, type, genre, goal_id, area, scope, period, relevance, content, quote, reason, people, tags, due, importance, count,
+export const UNIT_COLS = `id, memo_id, type, genre, goal_id, area, scope, period, relevance, realm, company, content, quote, reason, people, tags, due, importance, count,
   done, done_at, reviewed, created_at, to_char(created_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS day,
   (SELECT c.label FROM categories c WHERE c.user_id = units.user_id AND c.key = units.type) AS type_label`;
 export const LAYER_IDS = ['event', 'know', 'think', 'act', 'rel'];
@@ -81,6 +81,21 @@ async function askJSON(prompt, maxTokens = 4000) {
 
 const imp = (v) => ([1, 2, 3].includes(Number(v)) ? Number(v) : 2);
 const strArr = (v) => (Array.isArray(v) ? v.map(String).filter(Boolean) : []);
+// 置き場所：self（自分の脳）/ company（企業情報・部署内）/ nc（ネオキャリアナレッジ・全社）
+export const REALMS = ['self', 'company', 'nc'];
+// AIとの会話（AI履歴）の取り込み元と表示名
+export const AI_SOURCES = { claude: 'Claude', chatgpt: 'ChatGPT', gemini: 'Gemini', copilot: 'Copilot', ai: 'その他のAI' };
+// 業務ツールからの取り込み（既定で企業情報に入る）
+export const BIZ_SOURCES = ['kinbot', 'kincall', 'kinxs', 'sf', 'drive'];
+function realmFor(r, source, type) {
+  if (type === 'task' || type === 'goal') return 'self';
+  if (REALMS.includes(r.realm)) return r.realm;
+  if (BIZ_SOURCES.includes(source)) return 'company';
+  if (source === 'portal') return 'nc';
+  return 'self';
+}
+const cleanCompany = (v) => String(v || '').replace(/^#/, '').trim().slice(0, 60);
+
 const validDate = (v) => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null);
 
 export const CLASSIFY_RULES = `## 種類（type）
@@ -104,7 +119,14 @@ export const CLASSIFY_RULES = `## 種類（type）
 - task と goal の期限がわかれば due に YYYY-MM-DD で入れる。「来週金曜」などは日付に直す。不明なら null
 - importance は 1〜3（3が最も重要）
 - 既存の記憶とほぼ同じ内容（同じフィードバックを再び受けた等）なら same_as にその id（数値）を入れる。違えば null
-- メモに書かれていないことは付け足さない`;
+- メモに書かれていないことは付け足さない
+
+## 置き場所（realm）
+- self（既定）：本人の脳に入るもの。本人の出来事・学び・判断・アイディア・タスク・人との関係
+- company：企業情報（部署内）。顧客企業ごとの情報（商談で聞いた課題・懸念・予算・決まったこと・契約や納品の状況・担当者など）。company にその企業名（「株式会社」などは付けず、いつも同じ書き方）を必ず入れる
+- nc：ネオキャリアナレッジ（全社）。特定の顧客でも本人の考えでもない、会社として共有できる知識（商材の仕様・価格・プラン、社内ルール・手続き、ポータルの案内、うまくいった営業の型など）
+- 迷ったら self。task と goal は常に self
+- 同じメモから、本人の学び（self）と顧客の情報（company）が両方出ることがある。そのときは別のユニットに分ける`;
 
 export const CORE_RULES = `- 繰り返されているもの（count が大きいもの）、重要度が高いものを優先する
 - 記憶に書かれていないことは推測で付け足さない
@@ -175,7 +197,8 @@ export async function upkeepNeeds(uid) {
        (SELECT count(*)::int FROM units WHERE user_id = u.id AND relevance = 'direct'
           AND created_at > coalesce((SELECT updated_at FROM cores WHERE user_id = u.id), 'epoch')) AS new_since_core,
        (SELECT count(*)::int FROM units WHERE user_id = u.id AND NOT relevance_checked AND type NOT IN ('task','goal')) AS unchecked,
-       (SELECT count(*)::int FROM units WHERE user_id = u.id AND genre = '') AS no_genre
+       (SELECT count(*)::int FROM units WHERE user_id = u.id AND genre = '') AS no_genre,
+       (SELECT count(*)::int FROM units WHERE user_id = u.id AND NOT realm_checked AND type NOT IN ('task','goal')) AS no_realm
      FROM users u WHERE u.id = $1`, [uid]);
   const r = rows[0] || {};
   const weekOld = !r.core_at || Date.now() - new Date(r.core_at).getTime() > 7 * 86400000;
@@ -183,6 +206,7 @@ export async function upkeepNeeds(uid) {
     core: Boolean(r.core_request_at) || (weekOld && r.new_since_core >= 10),
     relevance: r.unchecked > 0 ? r.unchecked : 0,
     drawers: r.no_genre >= 10 ? r.no_genre : 0,
+    realm: r.no_realm > 0 ? r.no_realm : 0,
   };
 }
 export async function requestCore(uid) { await pool.query('UPDATE users SET core_request_at = now() WHERE id = $1', [uid]); }
@@ -204,6 +228,48 @@ export async function setRelevance(uid, items) {
     n += r.rowCount;
   }
   return n;
+}
+
+/** 置き場所（自分の脳・企業情報・全社ナレッジ）をまだ決めていない記憶 */
+export async function getUnitsForRealm(uid, limit = 150) {
+  const { rows } = await pool.query(
+    `SELECT u.id, u.type, left(u.content, 160) AS content, u.tags, m.source
+     FROM units u LEFT JOIN memos m ON m.id = u.memo_id
+     WHERE u.user_id = $1 AND NOT u.realm_checked AND u.type NOT IN ('task','goal')
+     ORDER BY u.created_at DESC LIMIT $2`, [uid, limit]);
+  return rows;
+}
+export async function setRealm(uid, items) {
+  let n = 0;
+  for (const it of items) {
+    const realm = REALMS.includes(it.realm) ? it.realm : 'self';
+    const r = await pool.query(`UPDATE units SET realm = $1, company = $2, realm_checked = TRUE WHERE id = $3 AND user_id = $4 AND type NOT IN ('task','goal')`,
+      [realm, realm === 'company' ? cleanCompany(it.company) : '', it.id, uid]);
+    n += r.rowCount;
+  }
+  return n;
+}
+/** 企業情報に出てくる会社名（表記をそろえるため） */
+export async function getCompanies(uid) {
+  const { rows } = await pool.query(
+    `SELECT company, count(*)::int AS n FROM units WHERE user_id = $1 AND realm = 'company' AND company <> '' GROUP BY company ORDER BY n DESC LIMIT 100`, [uid]);
+  return rows;
+}
+
+/** AI履歴：AIとの会話のメモ */
+export async function getAiHistory(uid, limit = 600) {
+  const { rows } = await pool.query(
+    `SELECT id, source, title, left(text, 240) AS preview, length(text) AS len, classified,
+       to_char(recorded_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS at, recorded_at AS created_at
+     FROM memos WHERE user_id = $1 AND source = ANY($2) ORDER BY recorded_at DESC LIMIT $3`, [uid, Object.keys(AI_SOURCES), limit]);
+  return rows;
+}
+export async function getMemo(uid, id) {
+  const { rows } = await pool.query(
+    `SELECT id, source, title, text, classified, to_char(recorded_at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS at FROM memos WHERE id = $1 AND user_id = $2`, [id, uid]);
+  if (!rows[0]) return null;
+  const units = (await pool.query(`SELECT ${UNIT_COLS} FROM units WHERE user_id = $1 AND memo_id = $2 ORDER BY id`, [uid, id])).rows;
+  return { ...rows[0], units };
 }
 
 /** これまでに使われた引き出し（テーマ）の名前 */
@@ -401,11 +467,12 @@ async function applyUnits(memo, list) {
         if (hit.rowCount) { repeated++; continue; }
       }
       await client.query(
-        `INSERT INTO units(user_id, memo_id, type, content, quote, reason, people, tags, due, importance, dates, genre, goal_id, area, scope, period, relevance, relevance_checked)
-         VALUES($11, $1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::date], $12, $13, $14, $15, $16, $17, TRUE)`,
+        `INSERT INTO units(user_id, memo_id, type, content, quote, reason, people, tags, due, importance, dates, genre, goal_id, area, scope, period, relevance, relevance_checked, realm, company, realm_checked)
+         VALUES($11, $1, $2, $3, $4, $5, $6, $7, $8, $9, ARRAY[$10::date], $12, $13, $14, $15, $16, $17, TRUE, $18, $19, TRUE)`,
         [memo.id, type, String(r.content), String(r.quote || ''), String(r.reason || ''),
           strArr(r.people), strArr(r.tags), validDate(r.due), imp(r.importance), today, memo.user_id, String(r.genre || '').trim().slice(0, 20), goalIds.has(Number(r.goal_id)) ? Number(r.goal_id) : null,
-          ...taskFields(type, r), r.relevance === 'peripheral' && type !== 'task' && type !== 'goal' ? 'peripheral' : 'direct'],
+          ...taskFields(type, r), r.relevance === 'peripheral' && type !== 'task' && type !== 'goal' ? 'peripheral' : 'direct',
+          realmFor(r, memo.source, type), realmFor(r, memo.source, type) === 'company' ? cleanCompany(r.company) : ''],
       );
       added++;
       if (goalIds.has(Number(r.goal_id))) touched.add(Number(r.goal_id));
@@ -426,7 +493,7 @@ async function applyUnits(memo, list) {
 export async function getCoreMaterial(uid) {
   const { rows } = await pool.query(
     `SELECT type, content, quote, reason, people, count, importance FROM units
-     WHERE user_id = $2 AND relevance = 'direct' AND (type = ANY($1) OR type NOT IN ('event', 'input', 'task'))
+     WHERE user_id = $2 AND relevance = 'direct' AND realm = 'self' AND (type = ANY($1) OR type NOT IN ('event', 'input', 'task'))
        AND type NOT IN ('event', 'input', 'task') ORDER BY count DESC, importance DESC, created_at DESC LIMIT 300`,
     [['lesson', 'value', 'decision', 'person', 'goal', 'question', 'idea'], uid],
   );
@@ -537,6 +604,10 @@ export async function updateUnit(uid, id, fields) {
     params.push(gid); sets.push(`goal_id = $${params.length}`);
   }
   if (fields.relevance === 'direct' || fields.relevance === 'peripheral') { params.push(fields.relevance); sets.push(`relevance = $${params.length}, relevance_checked = TRUE`); }
+  if (REALMS.includes(fields.realm)) {
+    params.push(fields.realm); sets.push(`realm = $${params.length}, realm_checked = TRUE`);
+    params.push(fields.realm === 'company' ? cleanCompany(fields.company) : ''); sets.push(`company = $${params.length}`);
+  } else if (typeof fields.company === 'string') { params.push(cleanCompany(fields.company)); sets.push(`company = $${params.length}`); }
   if (fields.area === 'work' || fields.area === 'life') { params.push(fields.area); sets.push(`area = $${params.length}`); }
   if (fields.scope !== undefined) {
     const sc = SCOPES.includes(fields.scope) ? fields.scope : '';
@@ -557,7 +628,7 @@ export async function deleteUnit(uid, id) {
 }
 
 export async function getState(uid) {
-  const [units, failed, core, recordings, photos, categories, goals] = await Promise.all([
+  const [units, failed, core, recordings, photos, categories, goals, aiMemos] = await Promise.all([
     pool.query(`SELECT ${UNIT_COLS} FROM units WHERE user_id = $1 ORDER BY created_at DESC LIMIT 2000`, [uid]),
     pool.query(`SELECT id, text, recorded_at FROM memos WHERE user_id = $1 AND NOT classified ORDER BY recorded_at DESC LIMIT 50`, [uid]),
     getCore(uid),
@@ -565,6 +636,7 @@ export async function getState(uid) {
     getRecentPhotos(uid, 12),
     getCategories(uid),
     getGoals(uid),
+    getAiHistory(uid),
   ]);
   const pend = (await pool.query(
     `SELECT (SELECT count(*)::int FROM units WHERE user_id = $1 AND NOT relevance_checked AND type NOT IN ('task','goal')) AS relevance,
@@ -573,7 +645,7 @@ export async function getState(uid) {
             (SELECT count(*)::int FROM memos WHERE user_id = $1 AND NOT classified) AS memos,
             (SELECT core_request_at FROM users WHERE id = $1) AS core_req,
             (SELECT quiz_request_at FROM users WHERE id = $1) AS quiz_req`, [uid])).rows[0];
-  return { units: units.rows, failed: failed.rows, core, recordings, photos, categories, goals, pending: pend, canSummarizeAudio, canTranscribe };
+  return { units: units.rows, failed: failed.rows, core, recordings, photos, categories, goals, aiMemos, aiNames: AI_SOURCES, pending: pend, canSummarizeAudio, canTranscribe };
 }
 
 // ---- Claudeに渡すテキスト整形 ----
@@ -587,6 +659,8 @@ export function unitLine(u) {
   if (u.due) meta.push(`期限 ${u.due}`);
   if (u.people?.length) meta.push(`人物 ${u.people.join('、')}`);
   if (u.tags?.length) meta.push(`タグ ${u.tags.join('、')}`);
+  if (u.realm === 'company') meta.push(`企業情報${u.company ? '：' + u.company : ''}`);
+  if (u.realm === 'nc') meta.push('全社ナレッジ');
   if (u.count > 1) meta.push(`${u.count}回`);
   meta.push(`${u.day}`, `id ${u.id}`);
   return `- ${bits.join(' ')}（${meta.join(' / ')}）`;

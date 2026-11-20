@@ -16,7 +16,7 @@ export async function getBriefing(uid) {
         AND ((due IS NOT NULL AND due <= ($2::date + 1)) OR (scope = 'day' AND period <= $3) OR (scope = 'week' AND period = $4))
       ORDER BY due NULLS LAST, created_at LIMIT 15`, [uid, today, today, weekKey()]),
     pool.query(`SELECT type, content FROM units
-      WHERE user_id = $1 AND relevance = 'direct' AND type IN ('event','decision','lesson')
+      WHERE user_id = $1 AND relevance = 'direct' AND realm = 'self' AND type IN ('event','decision','lesson')
       ORDER BY created_at DESC LIMIT 12`, [uid]),
     pool.query(`SELECT count(*)::int AS n FROM brain_quiz WHERE user_id = $1 AND rating IS NULL`, [uid]),
     pool.query(`SELECT count(*)::int AS n FROM units WHERE user_id = $1 AND type IN ('decision','idea','value','question')

@@ -403,6 +403,33 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
 .brain-time span{white-space:nowrap;min-width:7.5em}
 .brain-time input{flex:1;accent-color:var(--cyan)}
 
+/* ---- 脳の外：企業情報（部署内）とネオキャリアナレッジ（全社） ---- */
+.orgs{position:relative;z-index:3;padding:0 16px 16px;border-top:1px dashed var(--line);margin-top:-1px}
+.orgs-cap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:2px 10px;align-items:baseline;margin:12px 2px 10px;font-size:12px;color:var(--muted)}
+.orgs-cap span{white-space:nowrap}
+.orgs-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.org{display:flex;flex-direction:column;align-items:flex-start;gap:3px;text-align:left;border:1px solid var(--line);border-left:3px solid var(--c);border-radius:14px;padding:11px 12px 12px;background:var(--surface);color:var(--ink);min-width:0}
+.org:hover,.org[aria-pressed="true"]{border-color:var(--c);box-shadow:0 0 0 1px var(--c) inset}
+.org-sub{font-size:11px;color:var(--c);font-weight:700;letter-spacing:.06em}
+.org-name{font-size:15px;font-weight:700;line-height:1.35;word-break:keep-all;overflow-wrap:anywhere}
+.org-n{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums}
+.ai-chips{display:flex;gap:6px;flex-wrap:wrap;margin:0 0 10px}
+.ai-chips .chip[aria-pressed="true"]{color:var(--ink);border-color:var(--c);background:var(--surface2)}
+.ai-list{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.ai-item{display:block;width:100%;text-align:left;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:11px 13px;color:var(--ink)}
+.ai-item:hover{border-color:var(--c)}
+.ai-top{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--muted);margin-bottom:4px}
+.ai-badge{font-size:11px;font-weight:700;color:var(--c);border:1px solid var(--c);border-radius:999px;padding:0 8px}
+.ai-pending{margin-left:auto;color:var(--ember,#FFB86B)}
+.ai-prev{margin:0;font-size:14px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;overflow-wrap:anywhere}
+.ai-full{white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.7;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;max-height:60vh;overflow:auto;margin:8px 0 14px}
+.ai-paste{margin:14px 0 18px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.ai-paste summary{cursor:pointer;padding:12px 14px;font-weight:700}
+.ai-paste .inner{padding:0 14px 14px;display:grid;gap:10px}
+.ai-paste select,.ai-paste input,.ai-paste textarea{width:100%;box-sizing:border-box}
+.ai-paste textarea{min-height:140px}
+.realm-sel{max-width:11em}
+
 .review-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px;padding:10px 12px;border-radius:14px;background:var(--panel,#0f1736);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.25)}
 .review-top span{font-size:14px;color:var(--muted)}.review-top b{color:var(--text,#fff);font-size:18px}
 .done-box{margin-top:10px}.done-box summary{cursor:pointer;color:var(--muted);font-size:14px;padding:8px 0}
@@ -436,7 +463,8 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
   <main id="app" hidden>
     <div class="space">
       <div class="space-head"><h2 class="space-title">脳のネットワーク</h2><span class="space-date" id="today"></span></div>
-      <div class="map" id="map" role="group" aria-label="記憶と5つの層のネットワーク。脳を押すと残せます。層を押すとその記憶を見られます"></div>
+      <div class="map" id="map" role="group" aria-label="自分の脳の6つの層（出来事・知識・思考・行動・関係・AI履歴）のネットワーク。層を押すとその記憶を見られます"></div>
+      <div class="orgs" id="orgs"></div>
     </div>
     <div class="magnets" id="magnets"></div>
     <section class="panel" id="panel" aria-live="polite"></section>
@@ -447,7 +475,12 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
 
 <script>
 const TYPES={event:{label:'記憶',layer:'event'},input:{label:'インプット',layer:'know'},lesson:{label:'フィードバック・教訓',layer:'know'},idea:{label:'アイディア',layer:'think'},decision:{label:'判断と理由',layer:'think'},value:{label:'価値観',layer:'think'},question:{label:'未解決の問い',layer:'think'},task:{label:'タスク',layer:'act'},goal:{label:'目標',layer:'act'},person:{label:'人物',layer:'rel'}};
-const LAYERS=[{id:'event',label:'出来事'},{id:'know',label:'知識'},{id:'think',label:'思考'},{id:'act',label:'行動'},{id:'rel',label:'関係'}];
+const LAYERS=[{id:'event',label:'出来事'},{id:'know',label:'知識'},{id:'think',label:'思考'},{id:'act',label:'行動'},{id:'rel',label:'関係'},{id:'ai',label:'AI履歴'}];
+// 脳の外に置く2つ（いまは自分だけに見える。あとで部署・全社と共有する）
+const ORGS=[{id:'company',label:'企業情報',sub:'部署内'},{id:'nc',label:'ネオキャリアナレッジ',sub:'全社'}];
+const ORG_NAME={company:'企業情報',nc:'ネオキャリア<wbr>ナレッジ'};
+const REALM_LABEL={self:'自分の脳',company:'企業情報',nc:'全社ナレッジ'};
+const aiName=k=>((state&&state.aiNames)||{})[k]||k;
 // 自動で作られたカテゴリも含めて、種類と層を引く
 const cats=()=>(state&&state.categories)||[];
 function T(key){
@@ -458,7 +491,7 @@ function T(key){
 }
 function allLayers(){
   const extra=[...new Set(cats().filter(c=>c.layer==='new').map(c=>c.layer_label))].map(l=>({id:'n:'+l,label:l,custom:true}));
-  return [...LAYERS,...extra];
+  return [...LAYERS,...ORGS,...extra];
 }
 const EXTRA_COL=['#FFB86B','#F5E663','#7CF0FF','#FF8F8F'];
 function lcol(id){if(LCOL[id])return LCOL[id];const i=allLayers().filter(l=>l.custom).findIndex(l=>l.id===id);return EXTRA_COL[(i<0?0:i)%EXTRA_COL.length];}
@@ -599,15 +632,22 @@ function renderGoal(p){
 
 // ---- ネットワーク空間（脳を中心に5つの層、記憶は星として層のまわりに浮かぶ） ----
 const NODES=[
+  {id:'ai',x:40,y:76,mx:40,my:78},
   {id:'event',x:20,y:34,mx:22,my:36},
   {id:'know',x:80,y:34,mx:78,my:36},
   {id:'rel',x:13,y:68,mx:17,my:73},
   {id:'think',x:87,y:68,mx:83,my:73},
   {id:'act',x:32,y:90,mx:36,my:92},
 ];
-const LCOL={event:'#5CD2FF',know:'#6F9BFF',think:'#B07CFF',act:'#FF6FC8',rel:'#4FE3C1'};
-const LAYER_INFO={event:'起きたこと、会った人、出来事の記憶',know:'学んだこと、上司からのフィードバックや教訓',think:'アイディア、判断とその理由、価値観、まだ答えの出ていない問い',act:'タスクと目標',rel:'よく関わる人の特徴や判断基準'};
-const layerOf=u=>T(u.type).layer;
+const LCOL={event:'#5CD2FF',know:'#6F9BFF',think:'#B07CFF',act:'#FF6FC8',rel:'#4FE3C1',ai:'#FFC46B',company:'#7EE08A',nc:'#F5D76E'};
+const LAYER_INFO={event:'起きたこと、会った人、出来事の記憶',know:'学んだこと、上司からのフィードバックや教訓',think:'アイディア、判断とその理由、価値観、まだ答えの出ていない問い',act:'タスクと目標',rel:'よく関わる人の特徴や判断基準',
+  ai:'Claude・ChatGPT・GeminiなどAIとの会話',
+  company:'顧客企業ごとの情報。商談議事録・kinbot・kincall・kinXsから集めます（いまは自分だけに見えます）',
+  nc:'商材・社内ルール・ポータルなど、会社として共有できる知識（いまは自分だけに見えます）'};
+const layerOf=u=>u.realm==='company'?'company':u.realm==='nc'?'nc':u.realm==='ai'?'ai':T(u.type).layer;
+const isSelf=u=>!u.realm||u.realm==='self';
+// AI履歴の会話を、脳の点として扱う
+const aiPoints=()=>((state&&state.aiMemos)||[]).map(m=>({id:'m'+m.id,type:'_ai',realm:'ai',created_at:m.created_at,importance:1,count:1,people:[],tags:[]}));
 const EXTRA_SLOTS=[{x:66,y:90,mx:66,my:92},{x:88,y:90,mx:86,my:88},{x:12,y:90,mx:12,my:88},{x:50,y:92,mx:50,my:97}];
 const GOAL_SLOTS=[{x:30,y:13,mx:22,my:16},{x:50,y:8,mx:50,my:12},{x:70,y:13,mx:78,my:16}];
 const GCOL={work:'#FFD66B',life:'#FFB3D9'};
@@ -633,9 +673,10 @@ const BRAIN_REGIONS={
   event:{x:.81,y:.45,r:.17,part:'後頭葉'},
   rel:{x:.50,y:.63,r:.18,part:'側頭葉'},
   act:{x:.79,y:.80,r:.12,part:'小脳'},
+  ai:{x:.29,y:.73,r:.11,part:'海馬'},
 };
 function brainUnits(){
-  const all=(state.units||[]).filter(u=>!isPeri(u));
+  const all=[...(state.units||[]).filter(u=>!isPeri(u)&&isSelf(u)),...aiPoints()];
   const wk=ui.brainBack||0;if(!wk)return all;
   const cut=Date.now()-wk*7*86400000;return all.filter(u=>new Date(u.created_at).getTime()<=cut);
 }
@@ -645,7 +686,7 @@ function brainWeeks(){
   return Math.max(0,Math.min(26,Math.floor((Date.now()-first)/(7*86400000))));
 }
 function renderMap(){
-  const units=(state.units||[]).filter(u=>!isPeri(u));
+  const units=[...(state.units||[]).filter(u=>!isPeri(u)&&isSelf(u)),...aiPoints()];
   const cnt=id=>units.filter(u=>layerOf(u)===id).length;
   const openTasks=units.filter(u=>(u.type==='task'||u.type==='goal')&&!u.done).length;
   const label=id=>id==='act'&&openTasks?`のこり${openTasks}`:(cnt(id)?cnt(id)+'件':'');
@@ -663,13 +704,25 @@ function renderMap(){
   else $('map').insertAdjacentHTML('beforeend',`<button type="button" class="goal-hint" data-view="goals">${goalCands().length?`目的の候補が${goalCands().length}件あります`:'目的はここに星として光ります'}</button>`);
   const rg=$('brainRange');if(rg)rg.addEventListener('input',()=>{ui.brainBack=weeks-Number(rg.value);$('brainWhen').textContent=ui.brainBack?`${ui.brainBack}週間前の脳`:'いまの脳';layoutNet();});
   layoutNet();
-  const review=units.filter(u=>!u.reviewed).length+(state.failed||[]).length+cats().filter(c=>!c.reviewed).length+goalCands().length;
+  renderOrgs();
+  const review=(state.units||[]).filter(u=>!isPeri(u)&&!u.reviewed).length+(state.failed||[]).length+cats().filter(c=>!c.reviewed).length+goalCands().length;
   $('magnets').innerHTML=`<button type="button" class="magnet" data-view="review" aria-pressed="${ui.view==='review'}">見直し${review?`<span class="n">${review}</span>`:''}</button>
     <button type="button" class="magnet" data-view="goals" aria-pressed="${ui.view==='goals'||ui.view==='goal'}">目的${goalCands().length?`<span class="n">${goalCands().length}</span>`:''}</button>
     <button type="button" class="magnet" data-view="core" aria-pressed="${ui.view==='core'}">核${state.core?'':'<span class="n">まだ</span>'}</button>
     <button type="button" class="magnet" data-view="growth" aria-pressed="${ui.view==='growth'}">脳の成長</button>
     <button type="button" class="magnet" data-view="account" aria-pressed="${ui.view==='account'}">${esc((state.user&&state.user.name)||'アカウント')}</button>`;
   const d=new Date();$('today').textContent=`${d.getMonth()+1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）`;
+}
+
+function renderOrgs(){
+  const el=$('orgs');if(!el)return;
+  const all=(state.units||[]).filter(u=>!isPeri(u));
+  const co=all.filter(u=>u.realm==='company');const nc=all.filter(u=>u.realm==='nc');
+  const nCo=new Set(co.map(u=>u.company||'')).size;
+  const n={company:co.length?`${nCo}社・${co.length}件`:'まだありません',nc:nc.length?`${nc.length}件`:'まだありません'};
+  el.innerHTML=`<p class="orgs-cap"><span>脳の外：みんなと育てる知識</span><span>いまは自分だけに見えます</span></p>
+    <div class="orgs-grid">${ORGS.map(o=>`<button type="button" class="org" data-node="${o.id}" aria-pressed="${ui.view==='layer'&&ui.layer===o.id}" style="--c:${lcol(o.id)}">
+      <span class="org-sub">${o.sub}</span><span class="org-name">${ORG_NAME[o.id]}</span><span class="org-n">${n[o.id]}</span></button>`).join('')}</div>`;
 }
 
 // ---- 3Dの脳：記憶を脳の形の中に置き、なぞる・スクロールで回す ----
@@ -1082,12 +1135,15 @@ function unitHTML(u,{review=false,showLayer=false,relToggle=false}={}){
   if(u.due)meta.push(`期限 ${esc(u.due)}`);
   if((u.people||[]).length)meta.push(esc(u.people.join('、')));
   if((u.tags||[]).length)meta.push(esc(u.tags.map(x=>'#'+x).join(' ')));
+  if(u.realm==='company'&&u.company&&!(ui.view==='layer'&&ui.layer==='company'))meta.push('企業情報：'+esc(u.company));
+  if(u.realm==='nc'&&!(ui.view==='layer'&&ui.layer==='nc'))meta.push('全社ナレッジ');
   if((u.count||1)>1)meta.push(`${u.count}回目`);
   if(u.importance===3)meta.push('重要');
   meta.push(esc(u.day||''));
   const isTask=u.type==='task'||u.type==='goal';let actions='';
   if(review){const opts=typeOptions(u.type);const armed=ui.armed===u.id;
-    actions=`<div class="row-actions"><select data-retype="${u.id}" aria-label="種類を変える">${opts}</select><button data-ok="${u.id}">確認済みにする</button><button class="del${armed?' armed':''}" data-del="${u.id}">${armed?'もう一度押すと削除':'削除'}</button></div>`;}
+    const rs=u.type==='task'||u.type==='goal'?'':`<select class="realm-sel" data-realm="${u.id}" aria-label="置き場所を変える">${Object.entries(REALM_LABEL).map(([k,v])=>`<option value="${k}"${(u.realm||'self')===k?' selected':''}>${v}</option>`).join('')}</select>`;
+    actions=`<div class="row-actions"><select data-retype="${u.id}" aria-label="種類を変える">${opts}</select>${rs}<button data-ok="${u.id}">確認済みにする</button><button class="del${armed?' armed':''}" data-del="${u.id}">${armed?'もう一度押すと削除':'削除'}</button></div>`;}
   return `<li class="item${u.done?' done':''}">${isTask&&!review?`<input type="checkbox" class="check" data-done="${u.id}" ${u.done?'checked':''} aria-label="完了にする">`:''}
     <div class="body"><div class="type" style="color:${lcol(t.layer)}">${esc(t.label)}${t.custom?'<span class="newtag">自動</span>':''}${u.genre&&!showLayer?`<span class="newtag">${esc(u.genre)}</span>`:''}${u.goal_id&&ui.view!=='goal'?(()=>{const g=goalsAll().find(x=>x.id===u.goal_id);return g?`<span class="goaltag">★ ${esc(g.title)}</span>`:'';})():''}</div><p class="content">${esc(u.content)}</p>
     ${u.quote?`<p class="quote">「${esc(u.quote)}」</p>`:''}${u.reason?`<p class="quote">理由：${esc(u.reason)}</p>`:''}
@@ -1102,7 +1158,7 @@ function subjectOf(u,names){
   return best;
 }
 function drawersFor(layerId){
-  const every=state.units||[];const all=every.filter(u=>!isPeri(u));
+  const every=state.units||[];const all=every.filter(u=>!isPeri(u)&&(layerId==='company'||layerId==='nc'||isSelf(u)));
   const periDrawer=list=>list.length?[{key:'peri',label:'周辺の情報',units:list.slice().sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at))),last:true,peri:true}]:[];
   if(layerId==='rel'){
     // 人物の記憶は「誰についての記憶か（主語）」の人だけに入れる。ほかの記憶は、名前が出てくる全員の「関わった記憶」に入れる
@@ -1112,7 +1168,7 @@ function drawersFor(layerId){
       if(layerOf(u)==='rel'){get(subjectOf(u,names)).about.push(u);}
       else for(const n of new Set(names))get(n).with.push(u);
     }
-    const periRel=every.filter(u=>isPeri(u)&&(layerOf(u)==='rel'||(u.people||[]).length));
+    const periRel=every.filter(u=>isPeri(u)&&isSelf(u)&&(layerOf(u)==='rel'||(u.people||[]).length));
     const byNew=(a,b)=>String(b.created_at).localeCompare(String(a.created_at));
     const ds=[...map].filter(([,v])=>v.about.length||v.with.length>=2).map(([name,v])=>({key:'p:'+name,label:name,person:true,
       about:v.about.sort(byNew),with:v.with.sort(byNew),units:[...v.about.sort(byNew),...v.with.sort(byNew)]}));
@@ -1126,6 +1182,7 @@ function drawersFor(layerId){
   const ds=new Map();const add=(key,label,u)=>{if(!ds.has(key))ds.set(key,{key,label,units:[]});ds.get(key).units.push(u);};
   if(layerId==='act'){const done=list.filter(u=>u.done);list=list.filter(u=>!u.done);if(done.length)ds.set('done',{key:'done',label:'終わったもの',units:done,last:true});}
   if(layerId==='think'){for(const u of list)add('t:'+u.type,T(u.type).label,u);}
+  else if(layerId==='company'){for(const u of list)add('c:'+(u.company||''),u.company||'企業名なし',u);}
   else{
     const freq={};for(const u of list)for(const t of (u.tags||[]).map(cleanTag))if(t)freq[t]=(freq[t]||0)+1;
     for(const u of list){
@@ -1139,7 +1196,7 @@ function drawersFor(layerId){
     if(layerId==='act'&&!d.last)d.units.sort((a,b)=>(a.due||'9999').localeCompare(b.due||'9999'));
     else d.units.sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
   }
-  return [...arr.sort((a,b)=>(a.last?1:0)-(b.last?1:0)||(a.label==='その他')-(b.label==='その他')||b.units.length-a.units.length),...periDrawer(periList)];
+  return [...arr.sort((a,b)=>(a.last?1:0)-(b.last?1:0)||(a.label==='その他'||a.label==='企業名なし')-(b.label==='その他'||b.label==='企業名なし')||b.units.length-a.units.length),...periDrawer(periList)];
 }
 function drawerPreview(d){
   const u=d.person?(d.units.find(x=>layerOf(x)==='rel')||d.units[0]):d.units[0];
@@ -1309,6 +1366,7 @@ function renderActView(){
 
 function renderLayer(p){
   if(ui.layer==='act'&&!ui.q){ui.view='rec';openAct();return renderRec(p);}
+  if(ui.layer==='ai')return renderAi(p);
   const l=allLayers().find(x=>x.id===ui.layer)||LAYERS[0];
   const inLayer=cats().filter(c=>T(c.key).layer===l.id);
   const info=(LAYER_INFO[l.id]||'自動で作られた層です')+(inLayer.length?`。自動で作ったカテゴリ：${inLayer.map(c=>c.label).join('、')}`:'');
@@ -1317,16 +1375,59 @@ function renderLayer(p){
   const qi=$('q');qi.value=ui.q;qi.addEventListener('input',e=>{ui.q=e.target.value;renderMemList();});
   renderMemList();
 }
+// ---- AI履歴：AIとの会話（原本）を、AIごとに見る・貼り付けて残す ----
+function renderAi(p){
+  const all=(state&&state.aiMemos)||[];const col=lcol('ai');
+  const counts={};for(const m of all)counts[m.source]=(counts[m.source]||0)+1;
+  const keys=Object.keys((state&&state.aiNames)||{}).filter(k=>counts[k]);
+  if(ui.aiOpen){
+    const m=ui.aiDetail&&ui.aiDetail.id===ui.aiOpen?ui.aiDetail:null;
+    p.innerHTML=`<h2>AI履歴</h2><button class="back" type="button" data-aiopen="">← 会話の一覧</button>
+      ${m?`<div class="drawer-head" style="--c:${col}"><h3>${esc(m.title||aiName(m.source)+'との会話')}</h3><span>${esc(aiName(m.source))}・${esc(m.at)}</span></div>
+        <div class="ai-full">${esc(m.text)}</div>
+        ${m.units.length?`<h4>この会話から残った記憶</h4><ul class="list">${m.units.map(u=>unitHTML(u,{showLayer:true})).join('')}</ul>`:`<p class="hint">${m.classified?'この会話から残した記憶はありません。':'まだ整理されていません。次の整理で、あなたの発言から決めたこと・気づき・やることを記憶にします。'}</p>`}`
+      :'<p class="empty">読み込んでいます…</p>'}`;
+    if(!m)api('/api/memos/'+ui.aiOpen).then(d=>{ui.aiDetail=d;if(ui.view==='layer'&&ui.layer==='ai'&&ui.aiOpen===d.id)renderAi(p);}).catch(e=>setStatus(e.message,true));
+    return;
+  }
+  const f=ui.aiFilter&&counts[ui.aiFilter]?ui.aiFilter:'';
+  p.innerHTML=`<h2>AI履歴</h2><p class="lead">${esc(LAYER_INFO.ai)}。コネクタでつながったAIの会話は自動で、つながらないAI（会社のGeminiなど）は貼り付けて残します。</p>
+    <details class="ai-paste"${all.length?'':' open'}><summary>会話を貼り付けて残す</summary><div class="inner">
+      <label class="field"><span>どのAI</span><select id="ai-src">${['gemini','chatgpt','claude','copilot','ai'].map(k=>`<option value="${k}">${esc(aiName(k))}</option>`).join('')}</select></label>
+      <label class="field"><span>タイトル（なくてもよい）</span><input id="ai-title" maxlength="80" placeholder="例：DOCのUI改善の相談"></label>
+      <label class="field"><span>会話</span><textarea id="ai-text" placeholder="AIとのやり取りをそのまま貼り付けてください"></textarea></label>
+      <div class="actions"><button class="primary" type="button" id="ai-save">残す</button></div>
+    </div></details>
+    ${all.length?`<div class="ai-chips" style="--c:${col}"><button type="button" class="chip" data-aifilter="" aria-pressed="${!f}">すべて ${all.length}</button>${keys.map(k=>`<button type="button" class="chip" data-aifilter="${k}" aria-pressed="${f===k}">${esc(aiName(k))} ${counts[k]}</button>`).join('')}</div>
+    <input class="search" id="q" type="search" placeholder="会話の中身で探す" aria-label="AI履歴を探す"><div id="ailist"></div>`:'<p class="empty">まだAIとの会話はありません。</p>'}`;
+  const qi=$('q');if(qi){qi.value=ui.q;qi.addEventListener('input',e=>{ui.q=e.target.value;renderAiList();});}
+  renderAiList();
+}
+function renderAiList(){
+  const box=$('ailist');if(!box)return;const q=ui.q.trim().toLowerCase();const col=lcol('ai');
+  const f=ui.aiFilter||'';
+  const list=((state&&state.aiMemos)||[]).filter(m=>(!f||m.source===f)&&(!q||[m.title,m.preview].join(' ').toLowerCase().includes(q)));
+  box.innerHTML=list.length?`<ul class="ai-list">${list.slice(0,200).map(m=>`<li><button type="button" class="ai-item" data-aiopen="${m.id}" style="--c:${col}">
+      <span class="ai-top"><span class="ai-badge">${esc(aiName(m.source))}</span><span>${esc(m.at)}</span>${m.classified?'':'<span class="ai-pending">未整理</span>'}</span>
+      <p class="ai-prev">${esc(m.title?m.title+'　':'')}${esc(String(m.preview||'').replace(/^【[^】]*】\s*/,''))}</p></button></li>`).join('')}</ul>`
+    :`<p class="empty">条件に合う会話はありません。</p>`;
+}
+async function saveAiPaste(){
+  const text=$('ai-text').value.trim();if(!text){setStatus('会話を貼り付けてください。',true);return;}
+  const source=$('ai-src').value;
+  await api('/api/memos',{method:'POST',body:JSON.stringify({text,source,title:$('ai-title').value.trim()})});
+  setStatus(`${aiName(source)}との会話を残しました。次の整理で、あなたの発言から記憶にします。`);ui.aiFilter='';await load();
+}
 function renderMemList(){
   const box=$('memlist');if(!box)return;const q=ui.q.trim().toLowerCase();const lid=ui.layer;const col=lcol(lid);
   const hit=u=>[u.content,u.quote,u.reason,u.genre,...(u.people||[]),...(u.tags||[])].join(' ').toLowerCase().includes(q);
   if(q){
-    const pool=lid==='rel'?state.units.filter(u=>layerOf(u)==='rel'||(u.people||[]).length):state.units.filter(u=>layerOf(u)===lid);
+    const pool=lid==='rel'?state.units.filter(u=>isSelf(u)&&(layerOf(u)==='rel'||(u.people||[]).length)):state.units.filter(u=>layerOf(u)===lid);
     const list=pool.filter(hit);
     box.innerHTML=list.length?`<ul class="list">${list.slice(0,200).map(u=>unitHTML(u)).join('')}</ul>`:`<p class="empty">条件に合う記憶はありません。</p>`;return;
   }
   const ds=drawersFor(lid);
-  if(!ds.length){box.innerHTML=`<p class="empty">まだこの層の記憶はありません。真ん中の「記憶」から残してください。</p>`;return;}
+  if(!ds.length){box.innerHTML=`<p class="empty">${lid==='company'?'まだ企業情報はありません。整理のときに、kinbot・kincall・kinXsから顧客企業ごとの情報を集めます。':lid==='nc'?'まだネオキャリアナレッジはありません。商材・社内ルールなど、会社として共有できる知識が整理のときにここへ入ります。':'まだこの層の記憶はありません。真ん中の「記憶」から残してください。'}</p>`;return;}
   const open=ui.drawer&&ds.find(d=>d.key===ui.drawer);
   if(open){
     box.innerHTML=`<button class="back" type="button" data-drawer="">← 引き出し一覧</button>
@@ -1557,11 +1658,14 @@ document.addEventListener('click',async e=>{
     if(t.dataset.tshift!==undefined){const n=Number(t.dataset.tshift);ui.tdate=n===0?new Date():shiftDate(ui.tscope||'day',ui.tdate||new Date(),n);render();return;}
     if(t.id==='t-add'){addTaskUI();return;}
     if(t.dataset.area){const u=localUnit(t.dataset.area);const a=areaOf(u)==='life'?'work':'life';u.area=a;render();await patch(u.id,{area:a});return;}
+    if(t.dataset.aiopen!==undefined){ui.aiOpen=t.dataset.aiopen?Number(t.dataset.aiopen):null;renderAi($('panel'));$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
+    if(t.dataset.aifilter!==undefined){ui.aiFilter=t.dataset.aifilter;renderAi($('panel'));return;}
+    if(t.id==='ai-save'){t.disabled=true;try{await saveAiPaste();}finally{t.disabled=false;}return;}
     if(t.dataset.drawer!==undefined){ui.drawer=t.dataset.drawer||null;renderMemList();$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.dataset.view||t.dataset.node){
       if((recorder&&recorder.state==='recording')||live){setStatus('録音中です。止めてから切り替えてください。',true);return;}
       if(prog){setStatus('アップロードの処理中です。終わるまでこのままお待ちください。',true);return;}
-      if(t.dataset.node){if(ui.layer!==t.dataset.node){ui.q='';ui.drawer=null;}ui.view='layer';ui.layer=t.dataset.node;}else ui.view=t.dataset.view;
+      if(t.dataset.node){if(ui.layer!==t.dataset.node){ui.q='';ui.drawer=null;ui.aiOpen=null;}ui.view='layer';ui.layer=t.dataset.node;}else ui.view=t.dataset.view;
       ui.armed=null;if(ui.view!=='rec')ui.result=null;if(ui.view==='growth')ui.growth=null;setStatus('');render();
       if(window.innerWidth<700)$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.id==='recbtn'){if(state.canSummarizeAudio||state.canTranscribe)toggleRecord();else toggleLive();return;}
@@ -1596,6 +1700,10 @@ document.addEventListener('change',async e=>{
   if(s.dataset&&s.dataset.move){const v=s.value;if(!v)return;const u=localUnit(s.dataset.move);
     const body=v==='none'?{scope:''}:{scope:v,period:periodKey(v,new Date())};
     try{await patch(u.id,body);setStatus(v==='none'?'「いつか」に移しました。':`${{day:'今日',week:'今週',month:'今月',year:'今年'}[v]}に移しました。`);await load();}catch(err){setStatus(err.message,true);}return;}
+  if(s.dataset&&s.dataset.realm){const u=localUnit(s.dataset.realm);const v=s.value;let company='';
+    if(v==='company'){const c=window.prompt('どの企業の情報ですか？（企業名）',u.company||cleanTag((u.tags||[])[0]||''));if(c===null){s.value=u.realm||'self';return;}company=c.trim();}
+    u.realm=v;u.company=company;render();
+    try{await patch(u.id,{realm:v,company});setStatus(`${REALM_LABEL[v]}に移しました。`);}catch(err){setStatus('置き場所の変更に失敗しました：'+err.message,true);}return;}
   if(!s.dataset||!s.dataset.retype)return;const u=localUnit(s.dataset.retype);u.type=s.value;render();
   try{await patch(u.id,{type:s.value});}catch(err){setStatus('種類の変更に失敗しました：'+err.message,true);}
 });

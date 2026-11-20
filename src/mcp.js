@@ -5,7 +5,7 @@ import { getBriefing } from './briefing.js';
 import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, renameMilestone, setGoalNote, updateGoal, addMilestones } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
-  getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, createCategory, getGenres, getUnitsForRelevance, setRelevance, upkeepNeeds, markImported, getUnitsWithoutGenre, setGenres, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
+  getOpenTasks, getPerson, getRecentRecordings, getUnclassifiedPhotos, importedRefs, getCategories, getCompanies, getUnitsForRealm, setRealm, AI_SOURCES, BIZ_SOURCES, createCategory, getGenres, getUnitsForRelevance, setRelevance, upkeepNeeds, markImported, getUnitsWithoutGenre, setGenres, getUnclassified, saveCore, saveUnitsForMemo, searchUnits, todayJST, unitLine, updateUnit,
 } from './brain.js';
 
 const text = (t) => ({ content: [{ type: 'text', text: t }] });
@@ -26,6 +26,8 @@ const unitSchema = z.object({
   area: z.enum(['work', 'life']).optional().describe('task・goal のとき：work=仕事 / life=プライベート'),
   scope: z.enum(['year', 'month', 'week', 'day']).optional().describe('task・goal のとき：いつやるか（今年・今月・今週・今日）'),
   period: z.string().optional().describe('scope の期間（2026 / 2026-09 / 2026-W40 / 2026-09-28）。省略すると今の期間'),
+  realm: z.enum(['self', 'company', 'nc']).optional().describe('置き場所。self=自分の脳（既定）/ company=企業情報（顧客企業ごとの情報）/ nc=ネオキャリアナレッジ（会社として共有できる知識）'),
+  company: z.string().max(60).optional().describe('realm が company のときの企業名。既存の企業名と同じ書き方にする'),
 });
 
 const NEW_CATEGORY_RULE = `## 新しいカテゴリ
@@ -40,7 +42,11 @@ async function categoriesPart(uid) {
     : '（まだありません）';
   const genres = await getGenres(uid);
   const goals = (await getGoals(uid)).filter((g) => g.status !== 'dropped');
-  return `## 自動で作ったカテゴリ（type にそのまま使える）\n${list}\n\n${NEW_CATEGORY_RULE}
+  const companies = await getCompanies(uid);
+  return `## 企業情報にある企業名（realm が company のときは、合う企業があれば同じ書き方を使う）
+${companies.length ? companies.map((c) => c.company).join('、') : '（まだありません）'}
+
+## 自動で作ったカテゴリ（type にそのまま使える）\n${list}\n\n${NEW_CATEGORY_RULE}
 
 ## 引き出し（genre）
 - 各ユニットに genre として、その記憶が入る「引き出し」の名前を付ける。引き出しは、層の中でテーマごとに記憶をまとめる箱（例：営業トーク、kinbot開発、インターン管理、マーケ連携）
@@ -67,7 +73,7 @@ async function categoriesPart(uid) {
 - 今の目的：${goals.length ? goals.map((g) => `id ${g.id}「${g.title}」${g.status === 'candidate' ? '（承認待ちの候補）' : ''}`).join('、') : '（まだありません）'}`;
 }
 
-export function buildMcpServer(uid) {
+export function buildMcpServer(uid, { ai = '' } = {}) {
   const server = new McpServer({ name: 'knowkin', version: '1.0.0' });
 
   server.registerTool('get_core', {
@@ -145,10 +151,13 @@ export function buildMcpServer(uid) {
       text: z.string().min(1).describe('残す内容（原本）'),
       units: z.array(unitSchema).optional().describe('自分で分類した記憶ユニット'),
       ref: z.string().max(200).optional().describe('取り込み元の識別子（例 kinbot:meeting:<bot_id>、kincall:daily:2026-09-27）。同じ ref は二重に保存されない'),
-      source: z.enum(['claude', 'kinbot', 'kincall']).optional().describe('取り込み元。ユーザーに頼まれて残すときは省略'),
+      source: z.enum(['claude', 'chatgpt', 'gemini', 'kinbot', 'kincall', 'kinxs', 'sf', 'drive', 'portal']).optional()
+        .describe('取り込み元。AIとの会話を残すときは省略（つないでいるAIが自動で入る）。kinbot・kincall・kinxs・sf（Salesforce）・drive（Googleドライブの議事録）は企業情報、portal（社内ポータル）はネオキャリアナレッジに入る'),
     },
   }, async ({ text: t, units, ref, source }) => {
-    const r = await addMemo(uid, t, source || 'claude', units || null, ref || null);
+    // 業務ツールやポータルからの取り込みでなければ、AIとの会話（AI履歴）として、つないでいるAIの名前で残す
+    const src = source && (BIZ_SOURCES.includes(source) || source === 'portal') ? source : (ai || source || 'claude');
+    const r = await addMemo(uid, t, src, units || null, ref || null);
     if (r.duplicate) return text(`この内容（${ref}）はすでに取り込み済みなので、保存しませんでした。`);
     if (r.error) return text(r.error);
     if (r.pending) return text(`原本をメモ ${r.memo_id} として保存しました（未整理）。units を付けて保存し直すか、get_unclassified_memos → save_units で整理してください。`);
@@ -168,19 +177,22 @@ export function buildMcpServer(uid) {
     const up = await upkeepNeeds(uid);
     // kinbot・kincallから前日分を学ぶ（Claudeがkinbot・kincallのコネクタを使える場合）
     const y = new Date(Date.now() + 9 * 3600000 - 86400000).toISOString().slice(0, 10);
-    const kRefs = [`kinbot:daily:${y}`, `kinbot:mine:${y}`, `kincall:daily:${y}`];
+    const kRefs = [`kinbot:daily:${y}`, `kinbot:mine:${y}`, `kincall:daily:${y}`, `kinxs:daily:${y}`];
     const kDone = new Set(await importedRefs(uid, kRefs));
     const kTodo = kRefs.filter((r) => !kDone.has(r));
     const kinPart = kTodo.length ? `
 
-## kinbot・kincallから学んでください（${y}の分）
-kinbot・kincallのコネクタが使えるときだけ行う。使えなければこの節は飛ばす。読み取りだけに使い、sf_create・sf_update などの書き込み系ツールは絶対に使わない。
-${kTodo.includes(`kinbot:mine:${y}`) ? `- 自分の商談（ref「kinbot:mine:${y}」）：kinbot の list_meetings や get_deal_events で、${y} に本人（田中欽也）が担当・同席した商談を探し、必要なら get_meeting_detail で中身を読む。相手の懸念、決まったこと、次のアクション、本人の話し方でうまくいった点・反省点を、add_memo（source は kinbot、ref は上のもの）で記憶にする。本人が当事者の商談だけを対象にし、他の担当者の商談は入れない` : ''}
+## kinbot・kincall・kinXsから学んでください（${y}の分）
+それぞれのコネクタが使えるときだけ行う。使えないものは飛ばす。読み取りだけに使い、sf_create・sf_update・update_user・add_task などの書き込み系ツールは絶対に使わない。
+顧客企業についての情報は、units の realm を company にし、company に企業名を入れる（企業情報に企業ごとにまとまる）。本人の学び・反省・タスクは realm を self にする。
+${kTodo.includes(`kinbot:mine:${y}`) ? `- 自分の商談（ref「kinbot:mine:${y}」）：kinbot の list_meetings や get_deal_events で、${y} に本人（田中欽也）が担当・同席した商談を探し、必要なら get_meeting_detail で中身を読む。相手の懸念・課題・予算・決まったこと・次のアクション（realm は company、company は企業名）と、本人の話し方でうまくいった点・反省点（realm は self）を、add_memo（source は kinbot、ref は上のもの）で記憶にする。本人が当事者の商談だけを対象にし、他の担当者の商談は入れない` : ''}
 ${kTodo.includes(`kinbot:daily:${y}`) ? `- チームの要点（ref「kinbot:daily:${y}」）：list_deals を from と to に ${y} で呼び、商談の件数・結果ごとの件数・動きのあった案件を1件の event にまとめて add_memo（source は kinbot）。気になる傾向があれば question も作る` : ''}
 ${kTodo.includes(`kincall:daily:${y}`) ? `- 架電の要点（ref「kincall:daily:${y}」）：kincall の list_call_stats を ${y} で呼び、チームと本人の架電数・接触数・アポ数を1件の event にまとめて add_memo（source は kincall、goal_id は関係する目的）` : ''}
+${kTodo.includes(`kinxs:daily:${y}`) ? `- DOCのユーザー（ref「kinxs:daily:${y}」）：kinXs の list_users・list_renewals・list_ai_questions などで、${y} に動きのあった企業（新規・更新・解約の相談・AIへの質問の傾向・納品の状況）を読み、企業ごとの状況を units（realm は company、company は企業名）にして add_memo（source は kinxs）。どの企業にも当てはまる使い方の傾向や、よくある問い合わせは realm を nc にする` : ''}
 - その日にデータがない（休日など）ときは、skip_import でその ref を記録する（同じ日を二度調べないため）` : '';
     const upPart = [
       up.relevance ? `\n\n## 周辺情報の仕分けをしてください\n本人との関わりをまだ確かめていない記憶が${up.relevance}件あります。get_units_for_relevance で読み、set_relevance で仕分けてください。` : '',
+      up.realm ? `\n\n## 置き場所を決めてください\n自分の脳・企業情報・ネオキャリアナレッジのどこに置くか決まっていない記憶が${up.realm}件あります。get_units_for_realm で読み、set_realm で仕分けてください（一度に150件ずつ。残りは次の整理で）。` : '',
       up.drawers ? `\n\n## 引き出しの整理をしてください\n引き出しが決まっていない記憶が${up.drawers}件あります。get_units_without_drawer で読み、set_drawers で入れてください。` : '',
       up.core ? '\n\n## 核を育ててください\n（メモの整理と上の作業が終わったあと、最後に）get_core_material で材料を読み、本人の考え方の核をまとめ直して save_core で保存してください。' : '',
     ].join('');
@@ -198,6 +210,7 @@ ${JSON.stringify(photos.map((p) => ({ id: p.id, caption: p.text })))}` : '';
 source が voice のメモ（録音の文字起こし）は、あわせて title（20字以内）と summary（要点3〜5個の短い文）も作って save_units に渡してください。
 ${memos.length ? '' : '（テキストのメモはありません。写真だけ整理してください）'}
 文字起こしは音声認識のため誤字や句読点抜けがあるので、文脈から意味をくみ取って整理してください。
+source が claude・chatgpt・gemini などのメモはAIとの会話（AI履歴）です。本人の発言から、決めたこと・理由・気づき・迷い・やると言ったことを拾い、AIの返答の中身は本人が受け入れたものだけ記憶にしてください。
 source が gmail・gchat のメモ（メール・Googleチャットのやり取り）は、次の点を重視してください。
 - 相手との関係性を person として残す：誰とどんな用件でやり取りしているか、相手の立場・口調・判断基準、どちらが依頼する側か
 - 本人が頼まれたこと・約束したことは task（期限があれば due）、やり取りの中で決まったことは decision
@@ -515,6 +528,29 @@ ${JSON.stringify(units)}`);
     description: '記憶ごとに、本人が当事者（direct）か周辺の情報（peripheral）かを保存する。peripheral は核・再現度テスト・目的のタスクづくりの材料から外れ、画面では「周辺の情報」にまとまる。',
     inputSchema: { items: z.array(z.object({ id: z.number().int(), relevance: z.enum(['direct', 'peripheral']) })).min(1).max(200) },
   }, async ({ items }) => text(`${await setRelevance(uid, items)}件を仕分けました。`));
+
+  server.registerTool('get_units_for_realm', {
+    title: '置き場所が決まっていない記憶',
+    description: '自分の脳（self）・企業情報（company）・ネオキャリアナレッジ（nc）のどこに置くか、まだ決まっていない記憶を返す。読んだら set_realm で仕分けること。',
+    annotations: { readOnlyHint: true },
+  }, async () => {
+    const units = await getUnitsForRealm(uid);
+    if (!units.length) return text('置き場所が決まっていない記憶はありません。');
+    const companies = await getCompanies(uid);
+    return text(`次の記憶を、置き場所ごとに仕分けて set_realm で保存してください（全件分を渡す。self のものも渡すと確認済みになる）。
+- self：本人の脳。本人の出来事・学び・判断・アイディア・人との関係（迷ったらこれ）
+- company：企業情報。顧客企業ごとの情報（商談で聞いた課題・懸念・予算・決まったこと・契約や納品の状況）。company に企業名を入れる
+- nc：ネオキャリアナレッジ。会社として共有できる知識（商材の仕様・価格・プラン、社内ルール・手続き、ポータルの案内など）
+既存の企業名（同じ書き方を使う）：${companies.length ? companies.map((c) => c.company).join('、') : '（まだありません）'}
+
+${JSON.stringify(units)}`);
+  });
+
+  server.registerTool('set_realm', {
+    title: '置き場所を決める',
+    description: '記憶ごとに、自分の脳（self）・企業情報（company、company に企業名）・ネオキャリアナレッジ（nc）のどこに置くかを保存する。企業情報とナレッジは、核・再現度テスト・脳の成長の材料から外れ、画面ではそれぞれの場所にまとまる。',
+    inputSchema: { items: z.array(z.object({ id: z.number().int(), realm: z.enum(['self', 'company', 'nc']), company: z.string().max(60).optional() })).min(1).max(200) },
+  }, async ({ items }) => text(`${await setRealm(uid, items)}件の置き場所を決めました。`));
 
   server.registerTool('skip_import', {
     title: '取り込むものがなかったことを記録',
