@@ -469,6 +469,8 @@ body:not([data-view="brain"]):not([data-view="layer"]) .mainc .panel{margin-top:
 .tool-dot{position:absolute;right:6px;top:6px;width:10px;height:10px;border-radius:50%;background:#5A6788;border:2px solid var(--surface)}
 .tool-dot.on{background:#7EE08A}.tool-dot.via{background:#F5D76E}
 .tool-name{font-size:13px;font-weight:700}
+.tool-ic.img{padding:0;overflow:visible}.tool-ic img{width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.tool-iconedit{margin-left:auto;display:flex;gap:12px;font-size:13px}.tool-iconedit label{cursor:pointer}
 .tool-head{display:flex;align-items:center;gap:10px;margin:6px 0 10px}.tool-head h3{margin:0;font-size:18px}
 .quick{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
 @media (max-width:860px){
@@ -1663,12 +1665,23 @@ const AI_HOW={
   chatgpt:'ChatGPT の設定で「コネクタ」（開発者モード）を開き、このURLでカスタムコネクタを作ります。',
   copilot:'Copilot Studio のエージェントで「ツールを追加」→「Model Context Protocol」を選び、このURLを登録します。',
 };
+// 本人が差し替えた画像があればそれを、なければ knowkin の絵を出す
+const tIcon=t=>(ui.toolIcons||{})[t.id]?`<img src="${ui.toolIcons[t.id]}" alt="">`:icon(t.ic);
+// 選んだ画像を128pxの正方形に縮めて保存する（大きい画像をそのまま持たないため）
+async function setToolIcon(tool,file){
+  const img=await new Promise((ok,ng)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=()=>ng(new Error('画像を読めませんでした'));i.src=URL.createObjectURL(file);});
+  const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');
+  const sz=Math.min(img.width,img.height);g.drawImage(img,(img.width-sz)/2,(img.height-sz)/2,sz,sz,0,0,128,128);
+  const data=c.toDataURL('image/png');
+  await api('/api/tool-icons/'+tool,{method:'PUT',body:JSON.stringify({data})});
+  ui.toolIcons={...(ui.toolIcons||{}),[tool]:data};
+}
 async function renderConnect(p){
   p.innerHTML=`<p class="lead">読み込んでいます…</p>`;
   try{
     ui.account=ui.account||await api('/api/account');
-    const [up,ac]=await Promise.all([api('/api/upstreams').catch(()=>({list:[]})),api('/api/ai-clients').catch(()=>({clients:[],used:[]}))]);
-    ui.upstreams=up;ui.aiClients=ac;
+    const [up,ac,ti]=await Promise.all([api('/api/upstreams').catch(()=>({list:[]})),api('/api/ai-clients').catch(()=>({clients:[],used:[]})),api('/api/tool-icons').catch(()=>({}))]);
+    ui.upstreams=up;ui.aiClients=ac;ui.toolIcons=ti;
   }catch(e){if(e.message!=='unauthorized')p.innerHTML=`<p class="status err">${esc(e.message)}</p>`;return;}
   if(ui.view!=='connect')return;
   const a=ui.account,up=ui.upstreams.list||[],ac=ui.aiClients;
@@ -1677,7 +1690,7 @@ async function renderConnect(p){
   for(const u of up)st[u.key]=u.ok;
   p.innerHTML=TOOLS.map(g=>`<section class="tool-group"><h4>${esc(g.group)}</h4><div class="tool-grid">${g.items.map(t=>`
     <button type="button" class="tool" data-tool="${t.id}" aria-pressed="${ui.tool===t.id}" style="--c:${t.c}" aria-label="${esc(t.name)}（${st[t.id]?'つながっています':st[t.id]===null?'kinbot経由':'未接続'}）">
-      <span class="tool-ic">${icon(t.ic)}<i class="tool-dot ${st[t.id]?'on':st[t.id]===null?'via':''}"></i></span><span class="tool-name">${esc(t.name)}</span></button>`).join('')}</div></section>`).join('')
+      <span class="tool-ic${ui.toolIcons[t.id]?' img':''}">${tIcon(t)}<i class="tool-dot ${st[t.id]?'on':st[t.id]===null?'via':''}"></i></span><span class="tool-name">${esc(t.name)}</span></button>`).join('')}</div></section>`).join('')
     +`<div id="tooldetail"></div>`;
   renderToolDetail();
 }
@@ -1706,7 +1719,9 @@ function renderToolDetail(){
       <p class="hint" style="margin:0 0 10px">企業ごとの記録は、毎時15分に「企業情報」へ取り込みます。</p>
       <div class="actions" style="justify-content:flex-start"><button type="button" class="ghost" data-node="company">企業情報を見る</button><button class="ghost" type="button" id="uprefresh">つながりを確かめ直す</button></div></div>`;
   }
-  box.innerHTML=`<div class="tool-head" style="--c:${t.c}"><span class="tool-ic sm">${icon(t.ic)}</span><h3>${esc(t.name)}</h3></div>${h}`;
+  box.innerHTML=`<div class="tool-head" style="--c:${t.c}"><span class="tool-ic sm${ui.toolIcons[t.id]?' img':''}">${tIcon(t)}</span><h3>${esc(t.name)}</h3>
+    <span class="tool-iconedit"><label class="linkbtn">アイコンを変える<input type="file" accept="image/png,image/jpeg,image/webp" id="ticonfile" hidden></label>${ui.toolIcons[t.id]?'<button type="button" class="linkbtn" id="ticonreset">元に戻す</button>':''}</span></div>${h}`;
+  $('ticonfile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{await setToolIcon(id,f);setStatus('アイコンを変えました。');renderConnect($('panel'));}catch(err){setStatus(err.message,true);}});
   const lg=$('mcplog');if(lg)lg.addEventListener('toggle',async e=>{if(!e.target.open)return;try{const L=(await api('/api/mcp-log'));$('mcplogbody').innerHTML=L.length?`<table class="mlog"><tr><th>時刻</th><th>AI</th><th>呼び出し</th><th>結果</th><th>秒</th><th>大きさ</th></tr>${L.map(r=>`<tr><td>${esc(r.at)}</td><td>${esc(r.client)}</td><td>${esc(r.tool||r.method)}</td><td>${r.status}</td><td>${(r.ms/1000).toFixed(1)}</td><td>${Math.round(r.bytes/1000)}KB</td></tr>`).join('')}</table>`:'まだ呼び出しはありません。';}catch(err){$('mcplogbody').textContent=err.message;}});
   if(id==='google'&&a.google&&a.google.linked&&!ui.spaces)loadSpaces();
 }
@@ -1867,6 +1882,7 @@ document.addEventListener('click',async e=>{
     if(t.id==='navtasks'){openAct(t);renderNav();return;}
     if(t.id==='ghpush'){t.disabled=true;setStatus('GitHubに書き出しています…');try{const r=await api('/api/export/github',{method:'POST'});setStatus(r.ok?(r.written.length?`書き出しました（${r.written.join('、')}）`:'変わったところはありませんでした。'):(r.error||'書き出せませんでした'),!r.ok);}finally{t.disabled=false;}return;}
     if(t.id==='uprefresh'){t.disabled=true;await api('/api/upstreams?refresh=1').catch(()=>{});renderConnect($('panel'));return;}
+    if(t.id==='ticonreset'){await api('/api/tool-icons/'+ui.tool,{method:'DELETE'});delete ui.toolIcons[ui.tool];setStatus('元のアイコンに戻しました。');renderConnect($('panel'));return;}
     if(t.dataset.tool){ui.tool=ui.tool===t.dataset.tool?null:t.dataset.tool;for(const b of document.querySelectorAll('.tool'))b.setAttribute('aria-pressed',b.dataset.tool===ui.tool);renderToolDetail();if(ui.tool)$('tooldetail').scrollIntoView({behavior:'smooth',block:'nearest'});return;}
     if(t.dataset.coopen!==undefined){ui.coOpen=t.dataset.coopen||null;ui.coDetail=null;renderCompanies($('panel'));$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.id==='kbsync'){t.disabled=true;setStatus('kinbot から取り込んでいます…');try{const r=await api('/api/kinbot/sync',{method:'POST'});setStatus(r.skipped?r.skipped:'取り込みました。');}finally{ui.kinbotStatus=null;ui.companies=null;await load();}return;}

@@ -259,3 +259,11 @@ CREATE TABLE IF NOT EXISTS mcp_log (
   at         TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS mcp_log_user_idx ON mcp_log(user_id, at DESC);
+
+-- 連携するのアイコンを、本人が用意した画像に差し替える（128pxに縮めた画像を data URL で持つ）
+CREATE TABLE IF NOT EXISTS tool_icons (
+  user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  tool    TEXT NOT NULL,
+  data    TEXT NOT NULL,
+  PRIMARY KEY (user_id, tool)
+);

@@ -206,6 +206,21 @@ api.get('/ai-clients', wrap(async (req, res) => {
   const used = (await pool.query(`SELECT client, max(at) AS last FROM mcp_log WHERE user_id = $1 GROUP BY client`, [req.uid])).rows;
   res.json({ clients: rows.map((r) => ({ client: r.client, key: aiKeyFromClient(r.client) })), used: used.map((u) => ({ client: u.client, key: aiKeyFromClient(u.client) || (u.client === 'キー付きURL' ? 'key' : ''), last: u.last })) });
 }));
+// 連携するのアイコンの差し替え（本人が用意した画像）
+api.get('/tool-icons', wrap(async (req, res) => {
+  const { rows } = await pool.query('SELECT tool, data FROM tool_icons WHERE user_id = $1', [req.uid]);
+  res.json(Object.fromEntries(rows.map((r) => [r.tool, r.data])));
+}));
+api.put('/tool-icons/:tool', wrap(async (req, res) => {
+  const tool = String(req.params.tool).slice(0, 30); const data = String((req.body && req.body.data) || '');
+  if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(data) || data.length > 300000) return res.status(400).json({ error: '画像が大きすぎるか、形式が違います（PNG・JPEG・WebP）' });
+  await pool.query('INSERT INTO tool_icons(user_id, tool, data) VALUES($1,$2,$3) ON CONFLICT (user_id, tool) DO UPDATE SET data = EXCLUDED.data', [req.uid, tool, data]);
+  res.json({ ok: true });
+}));
+api.delete('/tool-icons/:tool', wrap(async (req, res) => {
+  await pool.query('DELETE FROM tool_icons WHERE user_id = $1 AND tool = $2', [req.uid, String(req.params.tool).slice(0, 30)]);
+  res.json({ ok: true });
+}));
 api.get('/mcp-log', wrap(async (req, res) => res.json((await pool.query(
   `SELECT client, method, tool, status, ms, bytes, to_char(at AT TIME ZONE 'Asia/Tokyo', 'MM/DD HH24:MI:SS') AS at FROM mcp_log WHERE user_id = $1 ORDER BY id DESC LIMIT 30`, [req.uid])).rows)));
 api.get('/kinbot/status', wrap(async (req, res) => res.json(await kinbotStatus(req.uid))));
