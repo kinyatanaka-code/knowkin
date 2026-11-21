@@ -804,7 +804,10 @@ function layoutNet(){
   const map=$('map');if(!map)return;const canvas=map.querySelector('canvas');if(!canvas)return;
   cancelAnimationFrame(net.raf);
   const box=map.getBoundingClientRect();const dpr=Math.min(window.devicePixelRatio||1,2);
-  const w=box.width,h=box.height;net.w=w;net.h=h;canvas.width=w*dpr;canvas.height=h*dpr;
+  const w=box.width,h=box.height;
+  // 隠れている（大きさ0）ときは描かない。前はここで描いて「non-finite」のエラーになり、脳が出ないままだった。見えたら ResizeObserver が描き直す
+  if(w<10||h<10){bindBrainDrag(map);return;}
+  net.w=w;net.h=h;canvas.width=w*dpr;canvas.height=h*dpr;
   net.ctx=canvas.getContext('2d');net.ctx.setTransform(dpr,0,0,dpr,0,0);
   const units=brainUnits();
   const grow=Math.min(1,Math.max(.5,.5+.5*Math.log10(1+units.length)/3));
@@ -860,7 +863,8 @@ function layoutNet(){
   if(ui.brainBack)map.querySelectorAll('.node.bl').forEach(el=>{const c=el.querySelector('.count');if(c)c.textContent=(counts[el.dataset.node]||0)+'件';});
   bindBrainDrag(map);
   net.dirty=true;
-  if(still.matches)drawNet();else loopNet();
+  // 自動では回さない（2026-11-22 田中さん「クルクル回らなくていい」）。止まった絵を1回だけ描く。なぞったときだけ向きが変わる
+  drawNet();
 }
 // 回転して画面に映す
 function proj(x,y,z){
@@ -890,7 +894,7 @@ function drawNet(){
   g.globalAlpha=1;
   // またたく点
   const t=net.t;
-  for(const n of net.tw){const p=idx.get(n);if(!p||p.Z>.3)continue;const k=.5+.5*Math.sin(t*2+hash(n.u.id,4)*6.28);const rr=n.r*p.s*(n.fresh?2.6:1.8)*(.6+.4*k);
+  for(const n of net.tw){const p=idx.get(n);if(!p||p.Z>.3||!isFinite(p.X)||!isFinite(p.Y))continue;const k=.5+.5*Math.sin(t*2+hash(n.u.id,4)*6.28);const rr=n.r*p.s*(n.fresh?2.6:1.8)*(.6+.4*k);
     const grd=g.createRadialGradient(p.X,p.Y,0,p.X,p.Y,rr*2.2);grd.addColorStop(0,n.col+(n.fresh?'cc':'66'));grd.addColorStop(1,n.col+'00');
     g.fillStyle=grd;g.beginPath();g.arc(p.X,p.Y,rr*2.2,0,Math.PI*2);g.fill();}
   // 層の名前を部位の位置に（手前の半球側の中心）
@@ -900,28 +904,20 @@ function drawNet(){
     el.style.setProperty('--x',px);el.style.setProperty('--y',py);el.style.setProperty('--mx',px);el.style.setProperty('--my',py);});
   net.dirty=false;
 }
-function loopNet(ts=0){
-  if(ts-net.last>33){
-    const dt=Math.min(.1,(ts-net.last)/1000);net.t=ts/1000;net.last=ts;
-    if(!net.drag){net.yaw+=net.vyaw;net.vyaw*=.94;if(Math.abs(net.vyaw)<.0006)net.vyaw=0;if(!net.vyaw)net.yaw+=.12*dt;}
-    if(net.visible)drawNet();
-  }
-  net.raf=requestAnimationFrame(loopNet);
-}
 // なぞって回す（横になぞると左右、縦は少し傾く）。縦のスクロールはページのまま
 function bindBrainDrag(map){
   const cv=map.querySelector('canvas');if(!cv||cv.dataset.bound)return;cv.dataset.bound='1';
   cv.addEventListener('pointerdown',e=>{net.drag={x:e.clientX,y:e.clientY,yaw:net.yaw,pitch:net.pitch,t:performance.now()};net.vyaw=0;cv.setPointerCapture?.(e.pointerId);});
   cv.addEventListener('pointermove',e=>{const d=net.drag;if(!d)return;const dx=e.clientX-d.x,dy=e.clientY-d.y;
-    const ny=d.yaw+dx*.012;net.vyaw=(ny-net.yaw)*.6;net.yaw=ny;net.pitch=Math.max(-.7,Math.min(.5,d.pitch+dy*.006));if(still.matches)drawNet();});
+    const ny=d.yaw+dx*.012;net.yaw=ny;net.pitch=Math.max(-.7,Math.min(.5,d.pitch+dy*.006));drawNet();});
   const end=()=>{net.drag=null;};cv.addEventListener('pointerup',end);cv.addEventListener('pointercancel',end);
   if('IntersectionObserver' in window)new IntersectionObserver(es=>{net.visible=es[0].isIntersecting;}).observe(map);
+  // 脳の画面が隠れているあいだに描くと大きさが0になり、点も脳の形も出ず、名前だけがずれて並んでいた。
+  //   大きさが変わったら（見えるようになったときを含む）描き直す
+  if('ResizeObserver' in window){let lw=0,lh=0;new ResizeObserver(es=>{const r=es[0].contentRect;if(r.width&&r.height&&(Math.abs(r.width-lw)>2||Math.abs(r.height-lh)>2)){lw=r.width;lh=r.height;clearTimeout(net.rt);net.rt=setTimeout(layoutNet,80);}}).observe(map);}
 }
-// ページのスクロールに合わせて脳が回る
-window.addEventListener('scroll',()=>{const y=window.scrollY;const d=y-net.lastScroll;net.lastScroll=y;if(!net.visible)return;
-  net.yaw+=d*.006;net.pitch=Math.max(-.7,Math.min(.5,net.pitch+d*.0008));if(still.matches)drawNet();},{passive:true});
-document.addEventListener('visibilitychange',()=>{if(document.hidden)cancelAnimationFrame(net.raf);else if(!still.matches){cancelAnimationFrame(net.raf);loopNet();}});
-window.addEventListener('resize',()=>{clearTimeout(net.t);net.t=setTimeout(layoutNet,120);});
+// スクロールでは回さない。画面の大きさが変わったら描き直す（net.t は時刻に使うので、待ち時間は net.rt に持つ）
+window.addEventListener('resize',()=>{clearTimeout(net.rt);net.rt=setTimeout(layoutNet,120);});
 if(document.fonts&&document.fonts.ready)document.fonts.ready.then(()=>layoutNet());
 
 // ---- 記憶する（録音・アップロード） ----
