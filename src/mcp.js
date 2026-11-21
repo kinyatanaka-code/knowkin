@@ -208,6 +208,12 @@ export function buildMcpServer(uid, { ai = '', upstream = [] } = {}) {
         .describe('取り込み元。AIとの会話を残すときは省略（つないでいるAIが自動で入る）。kinbot・kincall・kinxs・sf（Salesforce）・drive（Googleドライブの議事録）は企業情報、portal（社内ポータル）はネオキャリアナレッジに入る'),
     },
   }, async ({ text: t, units, ref, source }) => {
+    // 「連携する」のアイコンの差し替え（set_tool_icon が見えないAIのため、add_memo でも受け付ける）。記憶には残さない
+    const ti = /^knowkin-tool-icon:(google|claude|gemini|chatgpt|copilot|zoom|kinbot|kincall|kinxs):(data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+)$/.exec(String(t).trim());
+    if (ti) {
+      await pool.query('INSERT INTO tool_icons(user_id, tool, data) VALUES($1,$2,$3) ON CONFLICT (user_id, tool) DO UPDATE SET data = EXCLUDED.data', [uid, ti[1], ti[2]]);
+      return text(`${ti[1]} のアイコンを差し替えました。`);
+    }
     // 業務ツールやポータルからの取り込みでなければ、AIとの会話（AI履歴）として、つないでいるAIの名前で残す
     const src = source && (BIZ_SOURCES.includes(source) || source === 'portal') ? source : (ai || source || 'claude');
     const r = await addMemo(uid, t, src, units || null, ref || null);
