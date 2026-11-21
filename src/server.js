@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { migrate, pool } from './db.js';
 import { companyDetail, kinbotStatus, listCompanies, syncKinbot } from './kinbot-sync.js';
+import { upstreamTools } from './upstream.js';
 import { buildExportFiles, buildExportText, exportConfig, exportToGitHub } from './github-export.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
@@ -191,6 +192,12 @@ api.get('/account', wrap(async (req, res) => {
 // 企業情報（kinbot・kincall・kinXsから取り込んだ記録と、企業についての記憶）
 api.get('/companies', wrap(async (req, res) => res.json(await listCompanies(req.uid, String(req.query.q || '').trim().slice(0, 60)))));
 api.get('/companies/:key', wrap(async (req, res) => res.json(await companyDetail(req.uid, String(req.params.key).slice(0, 100)))));
+// 連携先情報：kinbot・kincall・kinXs につながっているか・使える道具
+api.get('/upstreams', wrap(async (req, res) => {
+  const owner = await firstUser();
+  const list = await upstreamTools(req.query.refresh === '1');
+  res.json({ owner: Boolean(owner && owner.id === req.uid), list: list.map((u) => ({ key: u.key, label: u.label, about: u.about, ok: u.ok, error: u.error || '', tools: u.tools.map((t) => t.name) })) });
+}));
 api.get('/kinbot/status', wrap(async (req, res) => res.json(await kinbotStatus(req.uid))));
 api.post('/kinbot/sync', wrap(async (req, res) => res.json(await syncKinbot(req.uid, { maxPages: 4 }))));
 api.get('/export/text', wrap(async (req, res) => res.type('text/plain; charset=utf-8').send(await buildExportText(req.uid))));
@@ -321,7 +328,10 @@ function aiKeyFromClient(name) {
   return 'ai';
 }
 async function serveMcp(uid, req, res, ai = '') {
-  const server = buildMcpServer(uid, { ai });
+  // 連携先の道具は、連携先の鍵を設定した人（いちばん最初のアカウント）だけに出す。ほかの人に会社のデータを読ませないため
+  const owner = await firstUser();
+  const upstream = owner && owner.id === uid ? await upstreamTools().catch(() => []) : [];
+  const server = buildMcpServer(uid, { ai, upstream });
   const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
   res.on('close', () => { transport.close(); server.close(); });
   await server.connect(transport);

@@ -429,6 +429,9 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
 .ai-paste select,.ai-paste input,.ai-paste textarea{width:100%;box-sizing:border-box}
 .ai-paste textarea{min-height:140px}
 .realm-sel{max-width:11em}
+.up-row{border:1px solid var(--line);border-left:3px solid var(--c);border-radius:12px;padding:10px 12px;margin:0 0 8px;background:var(--surface)}
+.up-head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.up-dot{width:8px;height:8px;border-radius:50%;background:var(--c);display:inline-block;align-self:center}
 
 .review-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px;padding:10px 12px;border-radius:14px;background:var(--panel,#0f1736);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.25)}
 .review-top span{font-size:14px;color:var(--muted)}.review-top b{color:var(--text,#fff);font-size:18px}
@@ -1540,13 +1543,27 @@ async function loadLine(code){
       <div class="actions" style="justify-content:flex-start"><button class="ghost" id="linecode">LINEの連携コードを出す</button></div>`;
 }
 async function loadSpaces(){try{ui.spaces=await api('/api/google/spaces');}catch(_){ui.spaces=[];}const el=$('spaces');if(el)el.innerHTML=spacesHTML();}
+// 連携先情報：knowkin がつながっている先（kinbot・kincall・kinXs）と、AIから使える道具
+async function renderUpstreams(force){
+  const box=$('upbox');if(!box)return;
+  let d;try{d=await api('/api/upstreams'+(force?'?refresh=1':''));}catch(e){box.innerHTML=`<h4 style="margin-top:0">連携先情報</h4><p class="status err">${esc(e.message)}</p>`;return;}
+  if(!$('upbox'))return;
+  const rows=d.list.length?d.list.map(u=>`<div class="up-row" style="--c:${u.ok?'#7EE08A':'#FF6F7D'}">
+      <div class="up-head"><span class="up-dot"></span><b>${esc(u.label)}</b><span class="hint">${esc(u.about)}</span></div>
+      <p class="hint" style="margin:4px 0 0">${u.ok?`つながっています。AIから使える道具 ${u.tools.length}個：${esc(u.tools.join('、'))}`:`つながりません：${esc(u.error)}`}</p></div>`).join('')
+    :'<p class="hint">連携先はまだありません。Railway の変数に KINBOT_URL と KINBOT_TOKEN を入れると、kinbot・kincall・kinXs につながります。</p>';
+  box.innerHTML=`<h4 style="margin-top:0">連携先情報</h4>
+    <p class="hint" style="margin:0 0 8px">knowkin につないだAI（Claude・Gemini・ChatGPT）は、knowkin だけつなげば、ここにある連携先の記録もその場で調べられます（読み取りだけ）。企業ごとの記録は毎時15分に企業情報へ取り込みます。${d.owner?'':'<br>連携先の道具は、連携先の鍵を設定した人のアカウントでだけ使えます。'}</p>
+    ${rows}<div class="actions" style="justify-content:flex-start;margin-top:8px"><button class="ghost" type="button" id="uprefresh">つながりを確かめ直す</button></div>`;
+}
 async function renderAccount(p){
   p.innerHTML=`<h2>アカウント</h2><p class="lead">読み込んでいます…</p>`;
   try{ui.account=ui.account||await api('/api/account');}catch(e){if(e.message!=='unauthorized')p.innerHTML=`<h2>アカウント</h2><p class="status err">${esc(e.message)}</p>`;return;}
   const a=ui.account;if(ui.view!=='account')return;
   p.innerHTML=`<h2>アカウント</h2><p class="lead">${esc(a.user.name)}（${esc(a.user.email)}）</p>
+  <div class="sheet" id="upbox"><h4 style="margin-top:0">連携先情報</h4><p class="hint">確かめています…</p></div>
   <div class="sheet">
-    <h4 style="margin-top:0">Claude.aiのコネクタURL</h4>
+    <h4 style="margin-top:0">AIのコネクタURL（Claude・Gemini・ChatGPT）</h4>
     <p class="hint" style="margin:0 0 6px">Claude.aiでカスタムコネクタを追加し、このURLを貼って「Connect」を押すと、knowkinのログイン画面が開きます。ログインして「許可する」を押せばつながります。</p>
     <div class="copyrow"><input id="acc-mcp" readonly value="${esc(a.mcpUrl)}" aria-label="コネクタURL"><button class="ghost" data-copy="acc-mcp">コピー</button></div>
     <div class="actions" style="justify-content:flex-start;margin:-4px 0 12px"><button class="ghost" id="disconnect">Claude.aiとの接続をすべて切る</button></div>
@@ -1573,6 +1590,7 @@ async function renderAccount(p){
     <div class="actions" style="justify-content:flex-start"><button class="primary" id="pwBtn">変更する</button></div>
   </div>
   <div class="actions" style="justify-content:flex-start;margin-top:18px"><button class="ghost" id="logout">ログアウト</button></div>`;
+  renderUpstreams();
   if(a.google&&a.google.linked&&!ui.spaces)loadSpaces();
   loadLine();
 }
@@ -1701,6 +1719,7 @@ document.addEventListener('click',async e=>{
     if(t.dataset.tshift!==undefined){const n=Number(t.dataset.tshift);ui.tdate=n===0?new Date():shiftDate(ui.tscope||'day',ui.tdate||new Date(),n);render();return;}
     if(t.id==='t-add'){addTaskUI();return;}
     if(t.dataset.area){const u=localUnit(t.dataset.area);const a=areaOf(u)==='life'?'work':'life';u.area=a;render();await patch(u.id,{area:a});return;}
+    if(t.id==='uprefresh'){t.disabled=true;await renderUpstreams(true);return;}
     if(t.dataset.coopen!==undefined){ui.coOpen=t.dataset.coopen||null;ui.coDetail=null;renderCompanies($('panel'));$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.id==='kbsync'){t.disabled=true;setStatus('kinbot から取り込んでいます…');try{const r=await api('/api/kinbot/sync',{method:'POST'});setStatus(r.skipped?r.skipped:'取り込みました。');}finally{ui.kinbotStatus=null;ui.companies=null;await load();}return;}
     if(t.dataset.aiopen!==undefined){ui.aiOpen=t.dataset.aiopen?Number(t.dataset.aiopen):null;renderAi($('panel'));$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}

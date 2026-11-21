@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { addQuiz, getGrowth, openQuiz, quizMaterial, quizNeeded, rateQuiz } from './growth.js';
 import { getBriefing } from './briefing.js';
 import { companyDetail, companyKey, kinbotConfig, listCompanies, searchBiz } from './kinbot-sync.js';
+import { callUpstream, zodShape } from './upstream.js';
 import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, renameMilestone, setGoalNote, updateGoal, addMilestones } from './goals.js';
 import {
   TYPES, CLASSIFY_RULES, CORE_RULES, addMemo, coreText, countUnclassified, getCore, getCoreMaterial, getDedupList,
@@ -74,8 +75,35 @@ ${companies.length ? companies.map((c) => c.company).join('、') : '（まだあ
 - 今の目的：${goals.length ? goals.map((g) => `id ${g.id}「${g.title}」${g.status === 'candidate' ? '（承認待ちの候補）' : ''}`).join('、') : '（まだありません）'}`;
 }
 
-export function buildMcpServer(uid, { ai = '' } = {}) {
-  const server = new McpServer({ name: 'knowkin', version: '1.0.0' });
+// どのAIにも最初に伝えること（Gemini・ChatGPTなどは、Claudeのプロジェクトの指示がないので、ここで頼む）
+const SERVER_INSTRUCTIONS = `knowkin は田中欽也の「第二の脳」です。あなたは本人の相棒として答えてください。
+- 会話の最初に get_briefing を呼び、本人の今の状況をつかむ
+- 本人が発言するたびに、返事を書いたあとで add_memo を呼び、本人の発言をそのまま text に入れて残す（source は省略。短い相づちは残さなくてよい）。これが本人とあなたの会話の記録（AI履歴）になる
+- 本人の考え方は get_core、過去の記録は search_memory、顧客企業のことは get_company で調べてから答える
+- 架電・アポ・稼働は kincall_ で始まる道具、商談・案件・Salesforce は kinbot_ で始まる道具、DOCの導入企業・候補者の質問は kinxs_ で始まる道具で、その場の数字を調べられる
+- 記録にないことを事実のように言わない。1回に聞くのは1つだけ。返事は短く`;
+
+export function buildMcpServer(uid, { ai = '', upstream = [] } = {}) {
+  const server = new McpServer({ name: 'knowkin', version: '1.0.0' }, { instructions: SERVER_INSTRUCTIONS });
+
+  // 連携先（kinbot・kincall・kinXs）の読み取りの道具を、名前の頭に連携先を付けてそのまま出す
+  for (const up of upstream) {
+    if (!up.ok) continue;
+    for (const t of up.tools) {
+      const name = `${up.key}_${t.name}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64);
+      try {
+        server.registerTool(name, {
+          title: `${up.label}：${t.title || t.name}`,
+          description: `【連携先 ${up.label}（${up.about}）】${String(t.description || '').slice(0, 900)}`,
+          inputSchema: zodShape(t.inputSchema),
+          annotations: { readOnlyHint: true },
+        }, async (args) => {
+          try { return await callUpstream(up.key, t.name, args, ai && ai !== 'claude' ? 20000 : 60000); }
+          catch (e) { return { ...text(`${up.label} の「${t.name}」を呼べませんでした：${e.message}`), isError: true }; }
+        });
+      } catch (e) { console.error('upstream tool skipped', name, e.message); }
+    }
+  }
 
   server.registerTool('get_core', {
     title: '本人の考え方の核と今のタスク',
@@ -165,9 +193,9 @@ export function buildMcpServer(uid, { ai = '' } = {}) {
   });
 
   server.registerTool('add_memo', {
-    title: '記憶に残す',
+    title: '記憶に残す（会話の記録）',
     description:
-      'ユーザーが「これ覚えておいて」「メモして」「knowkinに残して」と頼んだ内容を記憶に残す。ユーザーが明示的に頼んだときだけ呼ぶこと。'
+      '本人の発言を記憶（AI履歴）に残す。本人が発言するたびに、返事を書いたあとで本人の言葉をそのまま text に入れて呼ぶ（短い相づちは不要）。「これ覚えておいて」「メモして」「knowkinに残して」と頼まれたときも呼ぶ。'
       + 'text には本人の言葉をなるべくそのまま渡し、units には下のルールで自分で分類した結果を渡す（units を渡すとそのまま分類済みとして保存される）。'
       + '重複を判定したいときは先に get_unclassified_memos の existing か search_memory で既存の記憶を確認する。'
       + `今日は ${todayJST()}。自動で作ったカテゴリの一覧は get_categories で確認できる。\n\n${CLASSIFY_RULES}\n\n${NEW_CATEGORY_RULE}`,
