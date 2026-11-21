@@ -38,11 +38,16 @@ export async function buildReport(uid) {
   if (!kinbotConfig().ready || !owner || owner.id !== uid) throw new Error('連携先（kinbot）が設定されていません');
   const thisFrom = monthsBack(0), lastFrom = monthsBack(1), to = ymd(jst());
   const lastTo = ymd(new Date(new Date(thisFrom + 'T00:00:00Z').getTime() - 86400000));
-  const [dealsAll, eventsAll, apo, calls] = await Promise.all([
+  // アポ・架電・稼働は、今月と先月の両方（先月と比べる分析ができるように。2026-11-22 Gemini が「先月の架電が無い」と答えたため）
+  const [dealsAll, eventsAll, apo, calls, apoL, callsL, hours, hoursL] = await Promise.all([
     rows('kinbot', 'list_deals', { from: lastFrom, to }),
     rows('kinbot', 'get_deal_events', { from: lastFrom, to }),
     rows('kincall', 'list_apo_appointments', { from: thisFrom, to }).catch(() => []),
     rows('kincall', 'list_call_stats', { from: thisFrom, to }).catch(() => []),
+    rows('kincall', 'list_apo_appointments', { from: lastFrom, to: lastTo }).catch(() => []),
+    rows('kincall', 'list_call_stats', { from: lastFrom, to: lastTo }).catch(() => []),
+    rows('kincall', 'list_work_hours', { from: thisFrom, to }).catch(() => []),
+    rows('kincall', 'list_work_hours', { from: lastFrom, to: lastTo }).catch(() => []),
   ]);
   const deals = dealsAll.filter((d) => !NOT_DEAL.test(d.company_name || ''));
   const events = eventsAll.filter((e) => !NOT_DEAL.test(e.company_name || ''));
@@ -92,17 +97,25 @@ export async function buildReport(uid) {
     out.push('## 5. 過去12か月の移り変わり（人×月）', '', '受注・失注は、その月に初回商談をした案件の、いまの SF の段階。', '',
       table(['人', '月', '初回商談', 'SF 受注', 'SF 失注', '初回で次回が決まった率'], rowsH.map((o) => [o.p, o.m, o.n, o.win, o.lost, pct(o.nx, o.j)])), '');
   } catch (e) { out.push('## 5. 過去12か月の移り変わり', '', `読めませんでした：${e.message}`, ''); }
-  // アポ（今月）
-  const cnt = (list, k) => { const m = new Map(); for (const r of list) { const v = r[k] || '不明'; m.set(v, (m.get(v) || 0) + 1); } return [...m.entries()].sort((a, b) => b[1] - a[1]); };
-  out.push('## 6. アポ（今月取ったもの）', '', `全部で ${apo.length} 件`, '', table(['取った人', '件数'], cnt(apo, '獲得者')), '', table(['商談する人（現担当）', '件数'], cnt(apo, '現担当')), '');
-  // 架電（今月・人ごと）
-  const cb = new Map();
-  for (const r of calls) {
+  // アポ（今月・先月）
+  const cnt = (list, k) => { const m = new Map(); for (const r of list) { const v = r[k] || '不明'; m.set(v, (m.get(v) || 0) + 1); } return m; };
+  const aThis = cnt(apo, '獲得者'), aLast = cnt(apoL, '獲得者'), cThis = cnt(apo, '現担当'), cLast = cnt(apoL, '現担当');
+  const both = (a, b) => [...new Set([...a.keys(), ...b.keys()])].sort((x, y) => (a.get(y) || 0) - (a.get(x) || 0) || (b.get(y) || 0) - (b.get(x) || 0));
+  out.push('## 6. アポ（取った日で数える）', '', `今月 ${apo.length} 件・先月 ${apoL.length} 件`, '',
+    table(['取った人', '今月', '先月'], both(aThis, aLast).map((w) => [w, aThis.get(w) || 0, aLast.get(w) || 0])), '',
+    table(['商談する人（現担当）', '今月', '先月'], both(cThis, cLast).map((w) => [w, cThis.get(w) || 0, cLast.get(w) || 0])), '');
+  // 架電と稼働（人×月）：コール・接触・アポを、稼働時間（出勤管理の実績）とあわせて
+  const nm = (x) => String(x || '').normalize('NFKC').replace(/[\s　]/g, '');
+  const callBy = (list) => { const m = new Map(); for (const r of list) {
     const w = r['かけた人'] || r.caller || '不明', res = String(r['結果'] || r.result || ''), n = Number(r['件数'] || r.count || 0);
-    const o = cb.get(w) || { c: 0, t: 0, a: 0, days: new Set() }; o.c += n; if (res.startsWith('担当者接触')) o.t += n; if (res.includes('アポ獲得')) o.a += n; o.days.add(r['日'] || r.day); cb.set(w, o);
-  }
-  out.push('## 7. 架電（今月・人ごと）', '', table(['かけた人', '稼働日', 'コール', '担当者接触率', 'アポ', 'アポ率（コール比）'],
-    [...cb.entries()].sort((a, b) => b[1].a - a[1].a).map(([w, o]) => [w, o.days.size, o.c, pct(o.t, o.c), o.a, pct(o.a, o.c)])), '');
+    const o = m.get(nm(w)) || { w, c: 0, t: 0, a: 0, d: 0, days: new Set() }; o.c += n; if (res.startsWith('担当者接触')) o.t += n; if (res.includes('アポ獲得')) o.a += n; if (res.includes('資料送付')) o.d += n; o.days.add(r['日'] || r.day); m.set(nm(w), o); } return m; };
+  const hourBy = (list) => new Map(list.map((h) => [nm(h['人']), { plan: Number(h['予定時間の合計'] || 0), real: Number(h['実績時間の合計'] || 0) }]));
+  const per = (a, h) => (h ? (Math.round((a / h) * 10) / 10).toString() : '-');
+  const callRows = (cm, hm) => [...cm.values()].sort((a, b) => b.a - a.a || b.c - a.c).map((o) => { const h = hm.get(nm(o.w)) || { plan: 0, real: 0 };
+    return [o.w, o.days.size, h.real || '-', o.c, pct(o.t, o.c), o.a, pct(o.a, o.c), per(o.c, h.real), per(o.a, h.real), o.d]; });
+  const head = ['かけた人', '架電した日', '稼働時間（実績）', 'コール', '担当者接触率', 'アポ', 'アポ率（コール比）', '1時間あたりコール', '1時間あたりアポ', '資料送付'];
+  out.push('## 7. 架電と稼働（人ごと）', '', '稼働時間＝出勤管理の計算と同じ実働時間（その日の最初〜最後の架電。架電以外の作業は入らない）。', '',
+    '### 今月', '', table(head, callRows(callBy(calls), hourBy(hours))), '', '### 先月', '', table(head, callRows(callBy(callsL), hourBy(hoursL))), '');
   return out.join('\n');
 }
 
