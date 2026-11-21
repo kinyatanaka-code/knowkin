@@ -80,16 +80,28 @@ export async function buildReport(uid) {
     }
     out.push('');
   }
+  // 過去12か月の移り変わり（人×月）。スプレッドシートは Gemini が読みきれないので、ここに数だけ載せる
+  try {
+    const hFrom = monthsBack(11);
+    const [hd, he] = await Promise.all([rows('kinbot', 'list_deals', { from: hFrom, to }), rows('kinbot', 'get_deal_events', { from: hFrom, to })]);
+    const mo = (t) => String(t || '').slice(0, 7);
+    const by = new Map(); const g = (m, p) => { const k = `${m}|${p}`; if (!by.has(k)) by.set(k, { m, p, n: 0, win: 0, lost: 0, j: 0, nx: 0 }); return by.get(k); };
+    for (const d of hd) { if (NOT_DEAL.test(d.company_name || '')) continue; const o = g(mo(d.first_meeting_date), short(d.owner)); o.n++; const k = stageKind(d); if (k === '受注') o.win++; if (k === '失注') o.lost++; }
+    for (const e of he) { if (NOT_DEAL.test(e.company_name || '') || e.meeting_kind !== '初回商談') continue; const o = g(mo(e.event_date), short(e.owner)); o.j++; if (e.next_meeting_scheduled) o.nx++; }
+    const rowsH = [...by.values()].filter((o) => o.n || o.j).sort((a, b) => a.p.localeCompare(b.p) || a.m.localeCompare(b.m));
+    out.push('## 5. 過去12か月の移り変わり（人×月）', '', '受注・失注は、その月に初回商談をした案件の、いまの SF の段階。', '',
+      table(['人', '月', '初回商談', 'SF 受注', 'SF 失注', '初回で次回が決まった率'], rowsH.map((o) => [o.p, o.m, o.n, o.win, o.lost, pct(o.nx, o.j)])), '');
+  } catch (e) { out.push('## 5. 過去12か月の移り変わり', '', `読めませんでした：${e.message}`, ''); }
   // アポ（今月）
   const cnt = (list, k) => { const m = new Map(); for (const r of list) { const v = r[k] || '不明'; m.set(v, (m.get(v) || 0) + 1); } return [...m.entries()].sort((a, b) => b[1] - a[1]); };
-  out.push('## 5. アポ（今月取ったもの）', '', `全部で ${apo.length} 件`, '', table(['取った人', '件数'], cnt(apo, '獲得者')), '', table(['商談する人（現担当）', '件数'], cnt(apo, '現担当')), '');
+  out.push('## 6. アポ（今月取ったもの）', '', `全部で ${apo.length} 件`, '', table(['取った人', '件数'], cnt(apo, '獲得者')), '', table(['商談する人（現担当）', '件数'], cnt(apo, '現担当')), '');
   // 架電（今月・人ごと）
   const cb = new Map();
   for (const r of calls) {
     const w = r['かけた人'] || r.caller || '不明', res = String(r['結果'] || r.result || ''), n = Number(r['件数'] || r.count || 0);
     const o = cb.get(w) || { c: 0, t: 0, a: 0, days: new Set() }; o.c += n; if (res.startsWith('担当者接触')) o.t += n; if (res.includes('アポ獲得')) o.a += n; o.days.add(r['日'] || r.day); cb.set(w, o);
   }
-  out.push('## 6. 架電（今月・人ごと）', '', table(['かけた人', '稼働日', 'コール', '担当者接触率', 'アポ', 'アポ率（コール比）'],
+  out.push('## 7. 架電（今月・人ごと）', '', table(['かけた人', '稼働日', 'コール', '担当者接触率', 'アポ', 'アポ率（コール比）'],
     [...cb.entries()].sort((a, b) => b[1].a - a[1].a).map(([w, o]) => [w, o.days.size, o.c, pct(o.t, o.c), o.a, pct(o.a, o.c)])), '');
   return out.join('\n');
 }
@@ -113,9 +125,11 @@ export async function buildMeetingDocs(uid, days = 60) {
       sec('概要', s.overview), sec('決まったこと', s.agreements), sec('ポイント（担当者・採用・予算・決裁・懸念など）', s.key_points), sec('それぞれがやること', s.action_items), sec('お客様の懸念', s.customer_concerns),
       sec('ニーズ', a.needs), sec('予算', b.budget), sec('時期', b.timeline), sec('決める人', b.authority), sec('競合', a.competitors), sec('反論と切り返し', a.objections), sec('前向きなサイン', a.buying_signals),
       sec('お客様の反応', a.customer_reactions), sec('AI の見立て', a.deal_status ? `${a.deal_status}：${a.deal_status_reason || ''}` : ''), sec('次の一手', a.next_step)].filter(Boolean).join('\n\n');
+    // 文字起こしは別のドキュメントにする（Gemini は必要なときだけ開くので、議事録を小さく保つほうが読み落としが少ない）
     const t = tr.get(m.bot_id) || '';
-    const full = t ? `${text}\n\n■ 文字起こし（全文${t.length > 80000 ? '・長いので8万字まで' : ''}）\n${t.slice(0, 80000)}` : text;
+    const tx = t ? `kinbot 文字起こし：${m.title}\n商談日：${date}\n（話者：発言。自動の文字起こしなので、社名・人名は誤変換に注意）\n\n${t.slice(0, 150000)}${t.length > 150000 ? '\n\n（長いので15万字まで）' : ''}` : '';
     // 文字起こしがあとから取り込まれたときもドキュメントを書き直すよう、印に長さを混ぜる
-    return { id: m.bot_id, title: m.title, date, rep: m.rep_name || short(m.owner), updated: `${m.updated_at || m.created_at}#${t.length}`, text: full };
+    return { id: m.bot_id, title: m.title, date, rep: m.rep_name || short(m.owner), updated: `${m.updated_at || m.created_at}#${t.length}`,
+      text: t ? `${text}\n\n（文字起こしの全文は、ドキュメント「文字起こし ${m.title} ${date}」にある）` : text, transcript: tx };
   });
 }
