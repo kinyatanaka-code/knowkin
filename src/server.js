@@ -157,7 +157,9 @@ api.post('/memos', express.text({ type: 'text/*', limit: '5mb' }), wrap(async (r
   // AIとの会話を貼り付けて残す（コネクタが使えない会社のGeminiなど）
   if (AI_SOURCES[body.source]) {
     const head = String(body.title || '').trim().slice(0, 80);
-    const r = await addMemo(req.uid, head ? `【${AI_SOURCES[body.source]}との会話：${head}】\n${text}` : text, body.source);
+    // ref があれば同じものを二度入れない（Apps Script がドライブのフォルダから自動で送るとき、ドキュメントのIDを ref にする）
+    const ref = body.ref ? `ai:${String(body.ref).slice(0, 150)}` : null;
+    const r = await addMemo(req.uid, head ? `【${AI_SOURCES[body.source]}との会話：${head}】\n${text}` : text, body.source, null, ref);
     if (head && r.memo_id) await pool.query('UPDATE memos SET title = $1 WHERE id = $2 AND user_id = $3', [head, r.memo_id, req.uid]);
     return res.json(r);
   }
