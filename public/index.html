@@ -1713,7 +1713,9 @@ function renderToolDetail(){
   if(id==='google'){h=`<div class="sheet">${googleHTML(a.google||{})}</div>`;}
   else if(AI_HOW[id]){
     const used=(ui.aiClients.used||[]).filter(u=>u.key===id);
-    h=`<div class="sheet"><p class="hint" style="margin:0 0 8px">${esc(AI_HOW[id])}</p>
+    // 会社の Gemini はコネクタが使えないので、会話を自動で残す拡張機能を案内する（2026-11-22）
+    const gemExt=id==='gemini'?`<div style="margin:0 0 12px;padding:10px 12px;border-radius:12px;background:rgba(255,111,200,.08)"><b>会話を自動で残す（会社の Gemini でも使える）</b><p class="hint" style="margin:6px 0 8px">Chrome の拡張機能「knowkin for Gemini」を入れると、gemini.google.com でのやりとりが、押さなくても AI履歴に残ります。①下からダウンロードして解凍 ②Chrome で chrome://extensions を開き、右上の「デベロッパーモード」をオン ③「パッケージ化されていない拡張機能を読み込む」で解凍したフォルダを選ぶ ④拡張機能のアイコンを押し、連携キーを貼って保存。スマホの Gemini アプリの会話は残りません。</p><a class="ghost" href="/knowkin-gemini-ext.zip" download style="display:inline-block;text-decoration:none">拡張機能をダウンロード</a></div>`:'';
+    h=`<div class="sheet">${gemExt}<p class="hint" style="margin:0 0 8px">${esc(AI_HOW[id])}</p>
       <div class="copyrow"><input id="acc-mcp" readonly value="${esc(a.mcpUrl)}" aria-label="コネクタURL"><button class="ghost" data-copy="acc-mcp">コピー</button></div>
       <details style="margin:0 0 10px"><summary>ログインなしでつなぐURL（上でうまくいかないとき）</summary>
         <p class="hint" style="margin:8px 0 6px">連携キー入りのURLです。パスワードと同じなので人に見せないでください。</p>

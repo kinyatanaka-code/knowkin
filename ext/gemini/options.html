@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>knowkin for Gemini</title>
+<style>
+  body{font-family:system-ui,-apple-system,"Hiragino Sans",sans-serif;background:#f3f7f5;margin:0;min-width:320px;color:#1f2b27}
+  .card{background:#fff;border:1px solid #d7e8e0;border-radius:16px;padding:16px 18px;margin:12px}
+  h1{font-size:16px;color:#0d5b47;margin:0 0 6px;display:flex;align-items:center;gap:8px}
+  p{font-size:12px;color:#5b6b66;margin:0 0 10px;line-height:1.6}
+  label{font-size:12px;color:#5b6b66;display:block;margin:8px 0 4px}
+  input[type=password]{width:100%;box-sizing:border-box;border:1px solid #d7e8e0;border-radius:10px;padding:8px;font-size:13px}
+  .row{display:flex;align-items:center;gap:8px;margin-top:10px;font-size:13px}
+  button{border:0;border-radius:999px;padding:8px 18px;background:#1d9e75;color:#fff;font-weight:600;cursor:pointer}
+  .st{font-size:12px;margin-top:10px;white-space:pre-wrap}
+  .ok{color:#0d5b47}.ng{color:#b3261e}
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="7" fill="#e8f5ef"/><path d="M7 9.5c0-1.4 1.1-2.5 2.5-2.5h5c1.4 0 2.5 1.1 2.5 2.5v3c0 1.4-1.1 2.5-2.5 2.5H11l-2.5 2v-2c-.8-.3-1.5-1.1-1.5-2z" fill="#1d9e75"/><circle cx="17" cy="7" r="1.6" fill="#5DCAA5"/></svg>knowkin for Gemini</h1>
+    <p>Gemini（gemini.google.com）でのやりとりを、押さなくても knowkin の AI履歴に残します。答えが書き終わって5秒たったら送ります。</p>
+    <label for="key">knowkin の連携キー（設定にあります）</label>
+    <input id="key" type="password" placeholder="ここに貼る" autocomplete="off">
+    <div class="row"><input id="enabled" type="checkbox"><label for="enabled" style="margin:0">会話を残す</label></div>
+    <div class="row"><button id="save" type="button">保存する</button></div>
+    <div class="st" id="st"></div>
+  </div>
+<script src="options.js"></script>
+</body>
+</html>
