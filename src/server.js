@@ -198,6 +198,14 @@ api.get('/upstreams', wrap(async (req, res) => {
   const list = await upstreamTools(req.query.refresh === '1');
   res.json({ owner: Boolean(owner && owner.id === req.uid), list: list.map((u) => ({ key: u.key, label: u.label, about: u.about, ok: u.ok, error: u.error || '', tools: u.tools.map((t) => t.name) })) });
 }));
+// つながっているAI（コネクタでログイン中のもの）と、最後に使われた時刻
+api.get('/ai-clients', wrap(async (req, res) => {
+  const { rows } = await pool.query(
+    `SELECT c.client_name AS client, max(t.expires_at) AS until FROM oauth_tokens t JOIN oauth_clients c ON c.client_id = t.client_id
+     WHERE t.user_id = $1 AND t.expires_at > now() GROUP BY c.client_name`, [req.uid]);
+  const used = (await pool.query(`SELECT client, max(at) AS last FROM mcp_log WHERE user_id = $1 GROUP BY client`, [req.uid])).rows;
+  res.json({ clients: rows.map((r) => ({ client: r.client, key: aiKeyFromClient(r.client) })), used: used.map((u) => ({ client: u.client, key: aiKeyFromClient(u.client) || (u.client === 'キー付きURL' ? 'key' : ''), last: u.last })) });
+}));
 api.get('/mcp-log', wrap(async (req, res) => res.json((await pool.query(
   `SELECT client, method, tool, status, ms, bytes, to_char(at AT TIME ZONE 'Asia/Tokyo', 'MM/DD HH24:MI:SS') AS at FROM mcp_log WHERE user_id = $1 ORDER BY id DESC LIMIT 30`, [req.uid])).rows)));
 api.get('/kinbot/status', wrap(async (req, res) => res.json(await kinbotStatus(req.uid))));

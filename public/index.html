@@ -459,6 +459,17 @@ body[data-view="rec"] #panel>h2:first-child,body[data-view="review"] #panel>h2:f
 body:not([data-view="brain"]):not([data-view="layer"]) .mainc .panel{margin-top:0}
 .share-files{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px}
 .share-files li{display:flex;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--surface);font-size:14px}
+.tool-group{margin:0 0 18px}.tool-group h4{margin:0 0 8px;color:var(--muted);font-size:13px;letter-spacing:.06em}
+.tool-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,92px));gap:14px}
+@media (max-width:620px){.tool-grid{grid-template-columns:repeat(4,1fr);gap:10px}.tool-ic{width:60px!important;height:60px!important;border-radius:17px!important}.tool-ic.sm{width:44px!important;height:44px!important}}
+.tool{display:flex;flex-direction:column;align-items:center;gap:6px;width:100%;background:none;border:0;padding:0;color:var(--ink)}
+.tool-ic{position:relative;display:grid;place-items:center;width:72px;height:72px;border-radius:20px;background:var(--surface);border:1px solid var(--line);color:var(--c)}
+.tool-ic.sm{width:44px;height:44px;border-radius:14px}.tool-ic.sm svg{width:24px;height:24px}
+.tool:hover .tool-ic,.tool[aria-pressed="true"] .tool-ic{border-color:var(--c);box-shadow:0 0 0 1px var(--c) inset,0 0 18px color-mix(in srgb,var(--c) 35%,transparent)}
+.tool-dot{position:absolute;right:6px;top:6px;width:10px;height:10px;border-radius:50%;background:#5A6788;border:2px solid var(--surface)}
+.tool-dot.on{background:#7EE08A}.tool-dot.via{background:#F5D76E}
+.tool-name{font-size:13px;font-weight:700}
+.tool-head{display:flex;align-items:center;gap:10px;margin:6px 0 10px}.tool-head h3{margin:0;font-size:18px}
 .quick{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
 @media (max-width:860px){
   .shell{grid-template-columns:1fr;gap:12px}
@@ -1596,63 +1607,108 @@ async function loadLine(code){
       <div class="actions" style="justify-content:flex-start"><button class="ghost" id="linecode">LINEの連携コードを出す</button></div>`;
 }
 async function loadSpaces(){try{ui.spaces=await api('/api/google/spaces');}catch(_){ui.spaces=[];}const el=$('spaces');if(el)el.innerHTML=spacesHTML();}
-// 連携先情報：knowkin がつながっている先（kinbot・kincall・kinXs）と、AIから使える道具
-async function renderUpstreams(force){
-  const box=$('upbox');if(!box)return;
-  let d;try{d=await api('/api/upstreams'+(force?'?refresh=1':''));}catch(e){box.innerHTML=`<h4 style="margin-top:0">連携先情報</h4><p class="status err">${esc(e.message)}</p>`;return;}
-  if(!$('upbox'))return;
-  const rows=d.list.length?d.list.map(u=>`<div class="up-row" style="--c:${u.ok?'#7EE08A':'#FF6F7D'}">
-      <div class="up-head"><span class="up-dot"></span><b>${esc(u.label)}</b><span class="hint">${esc(u.about)}</span></div>
-      <p class="hint" style="margin:4px 0 0">${u.ok?`つながっています。AIから使える道具 ${u.tools.length}個：${esc(u.tools.join('、'))}`:`つながりません：${esc(u.error)}`}</p></div>`).join('')
-    :'<p class="hint">連携先はまだありません。Railway の変数に KINBOT_URL と KINBOT_TOKEN を入れると、kinbot・kincall・kinXs につながります。</p>';
-  box.innerHTML=`<h4 style="margin-top:0">連携先情報</h4>
-    <p class="hint" style="margin:0 0 8px">knowkin につないだAI（Claude・Gemini・ChatGPT）は、knowkin だけつなげば、ここにある連携先の記録もその場で調べられます（読み取りだけ）。企業ごとの記録は毎時15分に企業情報へ取り込みます。${d.owner?'':'<br>連携先の道具は、連携先の鍵を設定した人のアカウントでだけ使えます。'}</p>
-    ${rows}<div class="actions" style="justify-content:flex-start;margin-top:8px"><button class="ghost" type="button" id="uprefresh">つながりを確かめ直す</button></div>
-    <details id="mcplog" style="margin-top:10px"><summary>AIからの呼び出し（直近30件）</summary><div class="hint" id="mcplogbody">読み込んでいます…</div></details>`;
-  $('mcplog').addEventListener('toggle',async e=>{if(!e.target.open)return;try{const L=await api('/api/mcp-log');$('mcplogbody').innerHTML=L.length?`<table class="mlog"><tr><th>時刻</th><th>AI</th><th>呼び出し</th><th>結果</th><th>秒</th><th>大きさ</th></tr>${L.map(r=>`<tr><td>${esc(r.at)}</td><td>${esc(r.client)}</td><td>${esc(r.tool||r.method)}</td><td>${r.status}</td><td>${(r.ms/1000).toFixed(1)}</td><td>${Math.round(r.bytes/1000)}KB</td></tr>`).join('')}</table>`:'まだ呼び出しはありません。';}catch(err){$('mcplogbody').textContent=err.message;}});
-}
+// ---- 設定：パスワード・ログアウト・スマホから送る（iPhone・LINE）・連携キー ----
 async function renderAccount(p){
-  p.innerHTML=`<h2>アカウント</h2><p class="lead">読み込んでいます…</p>`;
-  try{ui.account=ui.account||await api('/api/account');}catch(e){if(e.message!=='unauthorized')p.innerHTML=`<h2>アカウント</h2><p class="status err">${esc(e.message)}</p>`;return;}
-  const a=ui.account;if(ui.view!=='account'&&ui.view!=='connect')return;
-  if(ui.view==='account'){
-    p.innerHTML=`<p class="lead">${esc(a.user.name)}（${esc(a.user.email)}）</p>
-    <h4>パスワードを変える</h4>
-    <div class="sheet">
-      <label class="field"><span>今のパスワード</span><input id="pw-cur" type="password" autocomplete="current-password"></label>
-      <label class="field"><span>新しいパスワード（8文字以上）</span><input id="pw-new" type="password" autocomplete="new-password"></label>
-      <div class="actions" style="justify-content:flex-start"><button class="primary" id="pwBtn">変更する</button></div>
-    </div>
-    <div class="actions" style="justify-content:flex-start;margin-top:18px"><button class="ghost" id="logout">ログアウト</button></div>`;
-    return;
-  }
-  p.innerHTML=`<p class="lead">knowkin とつながる先です。AI（Claude・Gemini・ChatGPT）、kinbot・kincall・kinXs、iPhone・LINE・Gmail。</p>
-  <div class="quick"><button type="button" class="ghost" data-node="ai">AI履歴を見る</button><button type="button" class="ghost" data-node="company">企業情報を見る</button></div>
-  <div class="sheet" id="upbox"><h4 style="margin-top:0">連携先情報</h4><p class="hint">確かめています…</p></div>
+  if(ui.view==='connect')return renderConnect(p);
+  p.innerHTML=`<p class="lead">読み込んでいます…</p>`;
+  try{ui.account=ui.account||await api('/api/account');}catch(e){if(e.message!=='unauthorized')p.innerHTML=`<p class="status err">${esc(e.message)}</p>`;return;}
+  const a=ui.account;if(ui.view!=='account')return;
+  p.innerHTML=`<p class="lead">${esc(a.user.name)}（${esc(a.user.email)}）</p>
+  <h4>スマホから送る</h4>
   <div class="sheet">
-    <h4 style="margin-top:0">AIのコネクタURL（Claude・Gemini・ChatGPT）</h4>
-    <p class="hint" style="margin:0 0 6px">Claude.aiでカスタムコネクタを追加し、このURLを貼って「Connect」を押すと、knowkinのログイン画面が開きます。ログインして「許可する」を押せばつながります。</p>
-    <div class="copyrow"><input id="acc-mcp" readonly value="${esc(a.mcpUrl)}" aria-label="コネクタURL"><button class="ghost" data-copy="acc-mcp">コピー</button></div>
-    <div class="actions" style="justify-content:flex-start;margin:-4px 0 12px"><button class="ghost" id="disconnect">Claude.aiとの接続をすべて切る</button></div>
-    <details style="margin:0 0 12px"><summary>ログインなしでつなぐURL（上でうまくいかないとき）</summary>
-      <p class="hint" style="margin:8px 0 6px">連携キー入りのURLです。パスワードと同じなので人に見せないでください。</p>
-      <div class="copyrow"><input id="acc-keyurl" readonly value="${esc(a.keyUrl)}" aria-label="連携キー入りのURL"><button class="ghost" data-copy="acc-keyurl">コピー</button></div></details>
-    <h4>iPhoneショートカット用</h4>
+    <h4 style="margin-top:0">iPhoneショートカット用</h4>
     <p class="hint" style="margin:0 0 6px">「URLの内容を取得」で、URLに下のアドレス、ヘッダ Authorization に「Bearer 連携キー」を入れ、フォームの file に録音を付けて送ります。</p>
     <div class="copyrow"><input id="acc-voice" readonly value="${esc(a.voiceUrl)}" aria-label="送信先URL"><button class="ghost" data-copy="acc-voice">コピー</button></div>
     <div class="copyrow"><input id="acc-key" readonly value="Bearer ${esc(a.key)}" aria-label="Authorization"><button class="ghost" data-copy="acc-key">コピー</button></div>
     <h4>ボイスメモの文字起こしを送る</h4>
-    <p class="hint" style="margin:0 0 6px">iPhoneのボイスメモで文字起こしをコピーしてからショートカットを動かすと、未整理のメモとして入ります。「URLの内容を取得」で、URLに下のアドレス、方法は POST、ヘッダ Authorization に上と同じ「Bearer 連携キー」、本文は JSON で text にクリップボード、source に voicememo を入れます。同じ内容を二度送っても1件になります。</p>
+    <p class="hint" style="margin:0 0 6px">「URLの内容を取得」で、URLに下のアドレス、方法は POST、ヘッダ Authorization に上と同じ「Bearer 連携キー」、本文は JSON で text にクリップボード、source に voicememo を入れます。</p>
     <div class="copyrow"><input id="acc-memo" readonly value="${esc(location.origin+'/api/memos')}" aria-label="文字起こしの送信先URL"><button class="ghost" data-copy="acc-memo">コピー</button></div>
     <div class="actions" style="justify-content:flex-start"><button class="ghost" id="rotate">連携キーを作り直す</button></div>
   </div>
   <h4>LINE</h4>
   <div id="linebox"><p class="hint">読み込んでいます…</p></div>
-  <h4>Gmail・Googleチャット</h4>
-  <div class="sheet">${googleHTML(a.google||{})}</div>`;
-  renderUpstreams();
-  if(a.google&&a.google.linked&&!ui.spaces)loadSpaces();
+  <h4>パスワードを変える</h4>
+  <div class="sheet">
+    <label class="field"><span>今のパスワード</span><input id="pw-cur" type="password" autocomplete="current-password"></label>
+    <label class="field"><span>新しいパスワード（8文字以上）</span><input id="pw-new" type="password" autocomplete="new-password"></label>
+    <div class="actions" style="justify-content:flex-start"><button class="primary" id="pwBtn">変更する</button></div>
+  </div>
+  <div class="actions" style="justify-content:flex-start;margin-top:18px"><button class="ghost" id="logout">ログアウト</button></div>`;
   loadLine();
+}
+
+// ---- 連携する：つながる先をアイコンで並べる。押すとその連携の中身が開く ----
+// アイコンは公式のロゴではなく、knowkin で描いた簡単な絵（ロゴは各社のものなので使わない）
+const IC={
+  mail:'<path d="M4 7h16v10H4z"/><path d="M4 8l8 6 8-6"/>',
+  chat:'<path d="M5 6h14v9H10l-4 3v-3H5z"/><circle cx="9.5" cy="10.5" r=".9" fill="currentColor" stroke="none"/><circle cx="12.5" cy="10.5" r=".9" fill="currentColor" stroke="none"/><circle cx="15.5" cy="10.5" r=".9" fill="currentColor" stroke="none"/>',
+  orbit:'<circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="8" ry="4"/>',
+  cube:'<path d="M12 4l7 4v8l-7 4-7-4V8z"/><path d="M5 8l7 4 7-4M12 12v8"/>',
+  plane:'<path d="M4 12l16-7-5 15-3-6z"/><path d="M12 14l8-9"/>',
+  video:'<rect x="4" y="7" width="11" height="10" rx="2"/><path d="M15 11l5-3v8l-5-3z"/>',
+  case:'<rect x="4" y="8" width="16" height="11" rx="2"/><path d="M9 8V6h6v2M4 13h16"/>',
+  phone:'<path d="M7 4h3l1.5 4-2 1.5a10 10 0 0 0 5 5l1.5-2 4 1.5v3a2 2 0 0 1-2 2A15 15 0 0 1 5 6a2 2 0 0 1 2-2z"/>',
+  build:'<path d="M5 20V6l7-2v16M12 9h7v11M8 9h.01M8 13h.01M8 17h.01M15 13h.01M15 17h.01"/>',
+};
+const icon=(k)=>`<svg viewBox="0 0 24 24" width="30" height="30" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${IC[k]}</svg>`;
+const TOOLS=[
+  {group:'Google',items:[{id:'google',name:'Google',sub:'Gmail・チャット',ic:'mail',c:'#5CD2FF'}]},
+  {group:'AI',items:[{id:'claude',name:'Claude',ic:'chat',c:'#B07CFF'},{id:'gemini',name:'Gemini',ic:'orbit',c:'#FF6FC8'},{id:'chatgpt',name:'GPT',ic:'cube',c:'#5CD2FF'},{id:'copilot',name:'Copilot',ic:'plane',c:'#7EE08A'}]},
+  {group:'会議',items:[{id:'zoom',name:'Zoom',ic:'video',c:'#6F9BFF'}]},
+  {group:'社内ツール',items:[{id:'kinbot',name:'kinbot',ic:'case',c:'#4FE3C1'},{id:'kincall',name:'kincall',ic:'phone',c:'#FF6FC8'},{id:'kinxs',name:'kinXs',ic:'build',c:'#F5D76E'}]},
+];
+const AI_HOW={
+  claude:'Claude の「カスタマイズ」→「コネクタ」→「カスタムコネクタを追加」でこのURLを貼り、「接続」を押すと knowkin のログイン画面が開きます。会社の Team・Enterprise では、組織のオーナーが「組織の設定」→「コネクタ」で追加します。',
+  gemini:'個人のGoogleアカウントの Gemini で「アプリ」→「カスタムアプリ」にこのURLを追加します（米国・英語のみの機能で、会社のアカウントでは使えません）。会社の Gemini では「共有する」の GitHub への書き出しを使ってください。',
+  chatgpt:'ChatGPT の設定で「コネクタ」（開発者モード）を開き、このURLでカスタムコネクタを作ります。',
+  copilot:'Copilot Studio のエージェントで「ツールを追加」→「Model Context Protocol」を選び、このURLを登録します。',
+};
+async function renderConnect(p){
+  p.innerHTML=`<p class="lead">読み込んでいます…</p>`;
+  try{
+    ui.account=ui.account||await api('/api/account');
+    const [up,ac]=await Promise.all([api('/api/upstreams').catch(()=>({list:[]})),api('/api/ai-clients').catch(()=>({clients:[],used:[]}))]);
+    ui.upstreams=up;ui.aiClients=ac;
+  }catch(e){if(e.message!=='unauthorized')p.innerHTML=`<p class="status err">${esc(e.message)}</p>`;return;}
+  if(ui.view!=='connect')return;
+  const a=ui.account,up=ui.upstreams.list||[],ac=ui.aiClients;
+  const aiOn=k=>ac.clients.some(c=>c.key===k)||ac.used.some(u=>u.key===k);
+  const st={google:a.google&&a.google.linked,claude:aiOn('claude'),gemini:aiOn('gemini'),chatgpt:aiOn('chatgpt'),copilot:aiOn('copilot'),zoom:null};
+  for(const u of up)st[u.key]=u.ok;
+  p.innerHTML=TOOLS.map(g=>`<section class="tool-group"><h4>${esc(g.group)}</h4><div class="tool-grid">${g.items.map(t=>`
+    <button type="button" class="tool" data-tool="${t.id}" aria-pressed="${ui.tool===t.id}" style="--c:${t.c}" aria-label="${esc(t.name)}（${st[t.id]?'つながっています':st[t.id]===null?'kinbot経由':'未接続'}）">
+      <span class="tool-ic">${icon(t.ic)}<i class="tool-dot ${st[t.id]?'on':st[t.id]===null?'via':''}"></i></span><span class="tool-name">${esc(t.name)}</span></button>`).join('')}</div></section>`).join('')
+    +`<div id="tooldetail"></div>`;
+  renderToolDetail();
+}
+function renderToolDetail(){
+  const box=$('tooldetail');if(!box)return;const id=ui.tool;if(!id){box.innerHTML='';return;}
+  const a=ui.account,t=TOOLS.flatMap(g=>g.items).find(x=>x.id===id);
+  let h='';
+  if(id==='google'){h=`<div class="sheet">${googleHTML(a.google||{})}</div>`;}
+  else if(AI_HOW[id]){
+    const used=(ui.aiClients.used||[]).filter(u=>u.key===id);
+    h=`<div class="sheet"><p class="hint" style="margin:0 0 8px">${esc(AI_HOW[id])}</p>
+      <div class="copyrow"><input id="acc-mcp" readonly value="${esc(a.mcpUrl)}" aria-label="コネクタURL"><button class="ghost" data-copy="acc-mcp">コピー</button></div>
+      <details style="margin:0 0 10px"><summary>ログインなしでつなぐURL（上でうまくいかないとき）</summary>
+        <p class="hint" style="margin:8px 0 6px">連携キー入りのURLです。パスワードと同じなので人に見せないでください。</p>
+        <div class="copyrow"><input id="acc-keyurl" readonly value="${esc(a.keyUrl)}" aria-label="連携キー入りのURL"><button class="ghost" data-copy="acc-keyurl">コピー</button></div></details>
+      <p class="hint" style="margin:0 0 10px">${used.length?`最後に使われたのは ${esc(new Date(used[0].last).toLocaleString('ja-JP'))}。`:'まだ呼び出しはありません。'}このAIとの会話は「AI履歴」に残ります。</p>
+      <div class="actions" style="justify-content:flex-start"><button type="button" class="ghost" data-node="ai" data-aif="${id}">AI履歴を見る</button>${id==='claude'?'<button class="ghost" id="disconnect">Claude.aiとの接続をすべて切る</button>':''}</div>
+      <details id="mcplog" style="margin-top:10px"><summary>AIからの呼び出し（直近30件）</summary><div class="hint" id="mcplogbody">読み込んでいます…</div></details></div>`;
+  }
+  else if(id==='zoom'){h=`<div class="sheet"><p class="hint" style="margin:0">Zoom の商談は、kinbot が録画・文字起こし・要約をしています。knowkin には kinbot 経由で、企業ごとの「商談」として毎時入ります。kinbot のアイコンから取り込みの状況を確かめられます。</p></div>`;}
+  else{
+    const u=(ui.upstreams.list||[]).find(x=>x.key===id);
+    h=`<div class="sheet">${u?`<p class="hint" style="margin:0 0 6px">${esc(u.about)}</p>
+      <p class="hint" style="margin:0 0 10px">${u.ok?`つながっています。knowkin につないだAIから使える道具 ${u.tools.length}個（読み取りだけ）：${esc(u.tools.join('、'))}`:`つながりません：${esc(u.error)}`}</p>`
+      :'<p class="hint">まだ設定されていません。Railway の変数に KINBOT_URL と KINBOT_TOKEN を入れると、kinbot・kincall・kinXs につながります。</p>'}
+      <p class="hint" style="margin:0 0 10px">企業ごとの記録は、毎時15分に「企業情報」へ取り込みます。</p>
+      <div class="actions" style="justify-content:flex-start"><button type="button" class="ghost" data-node="company">企業情報を見る</button><button class="ghost" type="button" id="uprefresh">つながりを確かめ直す</button></div></div>`;
+  }
+  box.innerHTML=`<div class="tool-head" style="--c:${t.c}"><span class="tool-ic sm">${icon(t.ic)}</span><h3>${esc(t.name)}</h3></div>${h}`;
+  const lg=$('mcplog');if(lg)lg.addEventListener('toggle',async e=>{if(!e.target.open)return;try{const L=(await api('/api/mcp-log'));$('mcplogbody').innerHTML=L.length?`<table class="mlog"><tr><th>時刻</th><th>AI</th><th>呼び出し</th><th>結果</th><th>秒</th><th>大きさ</th></tr>${L.map(r=>`<tr><td>${esc(r.at)}</td><td>${esc(r.client)}</td><td>${esc(r.tool||r.method)}</td><td>${r.status}</td><td>${(r.ms/1000).toFixed(1)}</td><td>${Math.round(r.bytes/1000)}KB</td></tr>`).join('')}</table>`:'まだ呼び出しはありません。';}catch(err){$('mcplogbody').textContent=err.message;}});
+  if(id==='google'&&a.google&&a.google.linked&&!ui.spaces)loadSpaces();
 }
 // ---- Claudeに頼む ----
 const ASKS=[
@@ -1810,7 +1866,8 @@ document.addEventListener('click',async e=>{
     if(t.dataset.area){const u=localUnit(t.dataset.area);const a=areaOf(u)==='life'?'work':'life';u.area=a;render();await patch(u.id,{area:a});return;}
     if(t.id==='navtasks'){openAct(t);renderNav();return;}
     if(t.id==='ghpush'){t.disabled=true;setStatus('GitHubに書き出しています…');try{const r=await api('/api/export/github',{method:'POST'});setStatus(r.ok?(r.written.length?`書き出しました（${r.written.join('、')}）`:'変わったところはありませんでした。'):(r.error||'書き出せませんでした'),!r.ok);}finally{t.disabled=false;}return;}
-    if(t.id==='uprefresh'){t.disabled=true;await renderUpstreams(true);return;}
+    if(t.id==='uprefresh'){t.disabled=true;await api('/api/upstreams?refresh=1').catch(()=>{});renderConnect($('panel'));return;}
+    if(t.dataset.tool){ui.tool=ui.tool===t.dataset.tool?null:t.dataset.tool;for(const b of document.querySelectorAll('.tool'))b.setAttribute('aria-pressed',b.dataset.tool===ui.tool);renderToolDetail();if(ui.tool)$('tooldetail').scrollIntoView({behavior:'smooth',block:'nearest'});return;}
     if(t.dataset.coopen!==undefined){ui.coOpen=t.dataset.coopen||null;ui.coDetail=null;renderCompanies($('panel'));$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.id==='kbsync'){t.disabled=true;setStatus('kinbot から取り込んでいます…');try{const r=await api('/api/kinbot/sync',{method:'POST'});setStatus(r.skipped?r.skipped:'取り込みました。');}finally{ui.kinbotStatus=null;ui.companies=null;await load();}return;}
     if(t.dataset.aiopen!==undefined){ui.aiOpen=t.dataset.aiopen?Number(t.dataset.aiopen):null;renderAi($('panel'));$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
@@ -1820,7 +1877,7 @@ document.addEventListener('click',async e=>{
     if(t.dataset.view||t.dataset.node){
       if((recorder&&recorder.state==='recording')||live){setStatus('録音中です。止めてから切り替えてください。',true);return;}
       if(prog){setStatus('アップロードの処理中です。終わるまでこのままお待ちください。',true);return;}
-      if(t.dataset.node){if(ui.layer!==t.dataset.node){ui.q='';ui.drawer=null;ui.aiOpen=null;ui.coOpen=null;ui.companies=null;}ui.view='layer';ui.layer=t.dataset.node;}else ui.view=t.dataset.view;
+      if(t.dataset.node){if(ui.layer!==t.dataset.node){ui.q='';ui.drawer=null;ui.aiOpen=null;ui.coOpen=null;ui.companies=null;}if(t.dataset.aif)ui.aiFilter=t.dataset.aif;ui.view='layer';ui.layer=t.dataset.node;}else ui.view=t.dataset.view;
       ui.armed=null;if(ui.view!=='rec')ui.result=null;if(ui.view==='growth')ui.growth=null;setStatus('');render();
       if(window.innerWidth<700)$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.id==='recbtn'){if(state.canSummarizeAudio||state.canTranscribe)toggleRecord();else toggleLive();return;}
