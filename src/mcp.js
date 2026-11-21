@@ -1,5 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
+import { pool } from './db.js';
 import { addQuiz, getGrowth, openQuiz, quizMaterial, quizNeeded, rateQuiz } from './growth.js';
 import { getBriefing } from './briefing.js';
 import { companyDetail, companyKey, kinbotConfig, listCompanies, searchBiz } from './kinbot-sync.js';
@@ -614,6 +615,16 @@ ${JSON.stringify(units)}`);
     description: '記憶ごとに、自分の脳（self）・企業情報（company、company に企業名）・ネオキャリアナレッジ（nc）のどこに置くかを保存する。企業情報とナレッジは、核・再現度テスト・脳の成長の材料から外れ、画面ではそれぞれの場所にまとまる。',
     inputSchema: { items: z.array(z.object({ id: z.number().int(), realm: z.enum(['self', 'company', 'nc']), company: z.string().max(60).optional() })).min(1).max(200) },
   }, async ({ items }) => text(`${await setRealm(uid, items)}件の置き場所を決めました。`));
+
+  server.registerTool('set_tool_icon', {
+    title: '連携するのアイコンを差し替える',
+    description: '本人が用意したアイコン画像（PNG・JPEG・WebP の data URL、128px程度）を、knowkin の「連携する」の各アイコンとして登録する。tool は google / claude / gemini / chatgpt / copilot / zoom / kinbot / kincall / kinxs。本人に頼まれたときだけ使う。',
+    inputSchema: { tool: z.enum(['google', 'claude', 'gemini', 'chatgpt', 'copilot', 'zoom', 'kinbot', 'kincall', 'kinxs']), data: z.string().max(300000) },
+  }, async ({ tool, data }) => {
+    if (!/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(data)) return { ...text('画像の形式が違います（data:image/png;base64,... の形）'), isError: true };
+    await pool.query('INSERT INTO tool_icons(user_id, tool, data) VALUES($1,$2,$3) ON CONFLICT (user_id, tool) DO UPDATE SET data = EXCLUDED.data', [uid, tool, data]);
+    return text(`${tool} のアイコンを差し替えました。`);
+  });
 
   server.registerTool('skip_import', {
     title: '取り込むものがなかったことを記録',
