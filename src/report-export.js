@@ -2,6 +2,7 @@
 // 会社のGeminiはスプレッドシートの全部の行を読みきれず、件数や率を数え間違える（2026-11-22 田中さんが試した結果）。
 // Claude がコードで数えるのと同じ数字を、ここで先に出しておき、Gemini にはドキュメントとして読ませる。
 import { kinbotConfig } from './kinbot-sync.js';
+import { pool } from './db.js';
 import { firstUser } from './auth.js';
 import { rows, short, stageKind, NOT_DEAL, jst, ymd, monthsBack } from './sheet-export.js';
 
@@ -101,6 +102,9 @@ export async function buildMeetingDocs(uid, days = 60) {
   if (!kinbotConfig().ready || !owner || owner.id !== uid) throw new Error('連携先（kinbot）が設定されていません');
   const from = ymd(jst(-days));
   const list = await rows('kinbot', 'list_meetings', { from });
+  // 文字起こし全文（knowkin に取り込み済みのもの）も、議事録のあとに付ける（お客様の実際の言葉を Gemini も読めるように）
+  const ids = list.map((m) => m.bot_id).filter(Boolean);
+  const tr = new Map((await pool.query('SELECT bot_id, text FROM biz_transcripts WHERE user_id = $1 AND bot_id = ANY($2)', [uid, ids]).catch(() => ({ rows: [] }))).rows.map((r) => [r.bot_id, r.text]));
   return list.filter((m) => m.bot_id && m.summary).map((m) => {
     const s = m.summary || {}, a = m.analysis || {}, b = a.bant || {};
     const date = ymd(new Date(new Date(m.created_at).getTime() + 9 * 3600000));
@@ -109,6 +113,9 @@ export async function buildMeetingDocs(uid, days = 60) {
       sec('概要', s.overview), sec('決まったこと', s.agreements), sec('ポイント（担当者・採用・予算・決裁・懸念など）', s.key_points), sec('それぞれがやること', s.action_items), sec('お客様の懸念', s.customer_concerns),
       sec('ニーズ', a.needs), sec('予算', b.budget), sec('時期', b.timeline), sec('決める人', b.authority), sec('競合', a.competitors), sec('反論と切り返し', a.objections), sec('前向きなサイン', a.buying_signals),
       sec('お客様の反応', a.customer_reactions), sec('AI の見立て', a.deal_status ? `${a.deal_status}：${a.deal_status_reason || ''}` : ''), sec('次の一手', a.next_step)].filter(Boolean).join('\n\n');
-    return { id: m.bot_id, title: m.title, date, rep: m.rep_name || short(m.owner), updated: m.updated_at || m.created_at, text };
+    const t = tr.get(m.bot_id) || '';
+    const full = t ? `${text}\n\n■ 文字起こし（全文${t.length > 80000 ? '・長いので8万字まで' : ''}）\n${t.slice(0, 80000)}` : text;
+    // 文字起こしがあとから取り込まれたときもドキュメントを書き直すよう、印に長さを混ぜる
+    return { id: m.bot_id, title: m.title, date, rep: m.rep_name || short(m.owner), updated: `${m.updated_at || m.created_at}#${t.length}`, text: full };
   });
 }

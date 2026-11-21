@@ -267,3 +267,20 @@ CREATE TABLE IF NOT EXISTS tool_icons (
   data    TEXT NOT NULL,
   PRIMARY KEY (user_id, tool)
 );
+
+-- 商談の文字起こし全文（kinbot から）。1件が数万字あるので、要約（biz_records）とは別の箱にする（2026-11-22）
+CREATE TABLE IF NOT EXISTS biz_transcripts (
+  user_id     INTEGER NOT NULL,
+  ref         TEXT NOT NULL,
+  bot_id      TEXT NOT NULL DEFAULT '',
+  company     TEXT NOT NULL DEFAULT '',
+  company_key TEXT NOT NULL DEFAULT '',
+  title       TEXT NOT NULL DEFAULT '',
+  people      TEXT[] NOT NULL DEFAULT '{}',
+  text        TEXT NOT NULL DEFAULT '',
+  at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, ref)
+);
+CREATE INDEX IF NOT EXISTS biz_transcripts_co_idx ON biz_transcripts(user_id, company_key, at DESC);
+CREATE INDEX IF NOT EXISTS biz_transcripts_bot_idx ON biz_transcripts(user_id, bot_id);

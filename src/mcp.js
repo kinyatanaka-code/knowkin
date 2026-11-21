@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { pool } from './db.js';
 import { addQuiz, getGrowth, openQuiz, quizMaterial, quizNeeded, rateQuiz } from './growth.js';
 import { getBriefing } from './briefing.js';
-import { companyDetail, companyKey, kinbotConfig, listCompanies, searchBiz } from './kinbot-sync.js';
+import { companyDetail, companyKey, findTranscripts, kinbotConfig, listCompanies, searchBiz } from './kinbot-sync.js';
 import { callUpstream, zodShape } from './upstream.js';
 import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, renameMilestone, setGoalNote, updateGoal, addMilestones } from './goals.js';
 import {
@@ -166,6 +166,27 @@ export function buildMcpServer(uid, { ai = '', upstream = [] } = {}) {
       ...recs.map((r) => `## ${r.at_jst} [${r.kind}] ${r.title}${r.people?.length ? `（${r.people.join('、')}）` : ''}\n${r.body}`),
       mem.length ? `\n## 企業についての記憶\n${mem.map(unitLine).join('\n')}` : '',
       others.length ? `\n（ほかに名前が近い企業：${others.join('、')}）` : ''].filter(Boolean).join('\n'));
+  });
+
+  server.registerTool('get_transcript', {
+    title: '商談の文字起こし全文',
+    description: 'kinbot で録音した商談の文字起こし全文を返す（話者：発言）。会社名か題名の一部で探し、いちばん新しい1件の全文と、ほかの候補の一覧を返す。bot_id を入れるとその商談の全文。'
+      + 'お客様が実際に何と言ったか（言い回し・温度感・懸念の言葉）を確かめたいとき、お礼メールや提案で相手の言葉を引きたいとき、要約（get_company）では足りないときに使う。',
+    inputSchema: { query: z.string().optional().describe('会社名か題名の一部'), bot_id: z.string().optional().describe('商談の bot_id（候補の一覧に出る）') },
+    annotations: { readOnlyHint: true },
+  }, async ({ query, bot_id }) => {
+    const q = String(query || '').trim(), id = String(bot_id || '').trim();
+    if (!q && !id) return text('query（会社名か題名の一部）か bot_id を入れてください。');
+    const max = ai && ai !== 'claude' ? 20000 : 300000;
+    const list = id ? [] : await findTranscripts(uid, { query: q, limit: 10 });
+    const pick = id || (list[0] && list[0].bot_id);
+    if (!pick) return text(`「${q}」の文字起こしは見つかりませんでした（取り込みがまだの可能性があります。knowkin の「連携する → kinbot」で取り込み状況を見られます）。`);
+    const [t] = await findTranscripts(uid, { botId: pick });
+    if (!t) return text(`bot_id「${pick}」の文字起こしは見つかりませんでした。`);
+    const body = t.text.length > max ? t.text.slice(0, max) + `\n\n（長いので ${max.toLocaleString()} 字で切りました。全部で ${t.text.length.toLocaleString()} 字）` : t.text;
+    return text([`# ${t.title}（${t.at_jst}・${t.company || '会社名なし'}・${(t.people || []).join('、')}）`, `bot_id：${t.bot_id}`,
+      list.length > 1 ? `\nほかの候補：\n${list.slice(1).map((x) => `- ${x.at_jst} ${x.title}（bot_id：${x.bot_id}・${Number(x.chars).toLocaleString()}字）`).join('\n')}` : '',
+      '\n## 文字起こし', body].filter(Boolean).join('\n'));
   });
 
   server.registerTool('get_recent_recordings', {

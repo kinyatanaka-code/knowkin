@@ -3,9 +3,9 @@
 // 取り込んだものは biz_records に入り、企業情報に会社ごとに並ぶ。Claude を通さないのでトークンはかからない。
 import { pool } from './db.js';
 
-export const FEED_KINDS = ['meetings', 'deal_events', 'calls', 'kinxs_accounts', 'kinxs_history', 'kinxs_voices', 'docai', 'doc_views'];
+export const FEED_KINDS = ['meetings', 'transcripts', 'deal_events', 'calls', 'kinxs_accounts', 'kinxs_history', 'kinxs_voices', 'docai', 'doc_views'];
 const SOURCE = { calls: 'kincall', kinxs_accounts: 'kinxs', kinxs_history: 'kinxs', kinxs_voices: 'kinxs', docai: 'kinxs' };
-const KIND_LABEL = { meetings: '商談', deal_events: '商談の動き', calls: '架電', kinxs_accounts: 'DOCの契約企業', kinxs_history: '契約企業の変更', kinxs_voices: 'お客様の声', docai: '候補者の質問', doc_views: '資料の閲覧' };
+const KIND_LABEL = { meetings: '商談', transcripts: '商談の文字起こし', deal_events: '商談の動き', calls: '架電', kinxs_accounts: 'DOCの契約企業', kinxs_history: '契約企業の変更', kinxs_voices: 'お客様の声', docai: '候補者の質問', doc_views: '資料の閲覧' };
 export const kindLabel = (k) => KIND_LABEL[k] || k;
 
 export function kinbotConfig() {
@@ -25,8 +25,9 @@ const displayName = (name) => String(name || '').normalize('NFKC').replace(/^(�
 const yesterdayJST = () => new Date(Date.now() + 9 * 3600000 - 86400000).toISOString().slice(0, 10);
 
 async function fetchFeed(cfg, kind, after) {
-  const u = `${cfg.url}/api/knowkin/feed?kind=${encodeURIComponent(kind)}&limit=500&after=${encodeURIComponent(after || '')}`;
-  const r = await fetch(u, { headers: { Authorization: `Bearer ${cfg.token}` }, signal: AbortSignal.timeout(60000) });
+  // 文字起こしは1件が数万字あるので、1回20件ずつ
+  const u = `${cfg.url}/api/knowkin/feed?kind=${encodeURIComponent(kind)}&limit=${kind === 'transcripts' ? 20 : 500}&after=${encodeURIComponent(after || '')}`;
+  const r = await fetch(u, { headers: { Authorization: `Bearer ${cfg.token}` }, signal: AbortSignal.timeout(120000) });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error || `kinbot ${r.status}`);
   if (!Array.isArray(j.items)) throw new Error('kinbot がまだ新しい版になっていないか、入口が見つかりません');
@@ -38,6 +39,18 @@ async function upsert(uid, kind, items) {
   for (const it of items) {
     if (!it || !it.ref) continue;
     const company = displayName(it.company);
+    if (kind === 'transcripts') {
+      // 文字起こしは別の箱に、切らずに入れる（kinbot 側で40万字まで）
+      await pool.query(
+        `INSERT INTO biz_transcripts(user_id, ref, bot_id, company, company_key, title, people, text, at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)
+         ON CONFLICT (user_id, ref) DO UPDATE SET bot_id = EXCLUDED.bot_id, company = EXCLUDED.company, company_key = EXCLUDED.company_key,
+           title = EXCLUDED.title, people = EXCLUDED.people, text = EXCLUDED.text, at = EXCLUDED.at, updated_at = now()`,
+        [uid, String(it.ref).slice(0, 300), String(it.bot_id || String(it.ref).split(':').pop()).slice(0, 120), company, companyKey(company),
+          String(it.title || '').slice(0, 300), (Array.isArray(it.people) ? it.people : []).map(String).slice(0, 10), String(it.body || '').replace(/\u0000/g, ''),
+          it.at && !Number.isNaN(Date.parse(it.at)) ? it.at : new Date().toISOString()]);
+      n++; continue;
+    }
     await pool.query(
       `INSERT INTO biz_records(user_id, ref, source, kind, company, company_key, title, body, people, at)
        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
@@ -121,4 +134,14 @@ export async function searchBiz(uid, query, limit = 30) {
     `SELECT kind, company, title, body, to_char(at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD') AS day FROM biz_records
      WHERE user_id = $1 AND (company ILIKE $2 OR company_key = $3 OR title ILIKE $2 OR body ILIKE $2)
      ORDER BY at DESC LIMIT $4`, [uid, like, companyKey(query), limit])).rows;
+}
+
+/** 文字起こしを探す（会社名・題名の一部、または bot_id）。新しい順 */
+export async function findTranscripts(uid, { query = '', botId = '', limit = 10 } = {}) {
+  if (botId) return (await pool.query(
+    `SELECT ref, bot_id, company, title, people, text, to_char(at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS at_jst FROM biz_transcripts WHERE user_id = $1 AND bot_id = $2`, [uid, botId])).rows;
+  const like = `%${query}%`;
+  return (await pool.query(
+    `SELECT ref, bot_id, company, title, people, length(text) AS chars, to_char(at AT TIME ZONE 'Asia/Tokyo', 'YYYY-MM-DD HH24:MI') AS at_jst FROM biz_transcripts
+     WHERE user_id = $1 AND (company ILIKE $2 OR company_key = $3 OR title ILIKE $2) ORDER BY at DESC LIMIT $4`, [uid, like, companyKey(query), limit])).rows;
 }
