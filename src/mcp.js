@@ -99,7 +99,7 @@ export function buildMcpServer(uid, { ai = '', upstream = [] } = {}) {
           inputSchema: zodShape(t.inputSchema),
           annotations: { readOnlyHint: true },
         }, async (args) => {
-          try { return await callUpstream(up.key, t.name, args, ai && ai !== 'claude' ? 20000 : 60000); }
+          try { return await callUpstream(up.key, t.name, args, ai && ai !== 'claude' ? 20000 : 400000); }
           catch (e) { return { ...text(`${up.label} の「${t.name}」を呼べませんでした：${e.message}`), isError: true }; }
         });
       } catch (e) { console.error('upstream tool skipped', name, e.message); }
