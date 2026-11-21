@@ -5,7 +5,9 @@ import os from 'node:os';
 import path from 'node:path';
 import ffmpegPath from 'ffmpeg-static';
 
-const GEMINI_KEY = process.env.GEMINI_API_KEY;
+// knowkin では Gemini の API を使わない（2026-11-21 田中さん「knowkinの分だけ Gemini のトークンは使わないようにしたい」）。
+// 使いたくなったら、Railway の変数 KNOWKIN_USE_GEMINI=1 を足す
+const GEMINI_KEY = process.env.KNOWKIN_USE_GEMINI === '1' ? process.env.GEMINI_API_KEY : '';
 const AUDIO_MODEL = process.env.AUDIO_MODEL || 'gemini-2.5-flash';
 const GEMINI_BASE = process.env.GEMINI_BASE_URL || 'https://generativelanguage.googleapis.com';
 export const canSummarizeAudio = Boolean(GEMINI_KEY);
