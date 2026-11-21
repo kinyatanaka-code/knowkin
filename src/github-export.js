@@ -5,6 +5,62 @@ import { pool } from './db.js';
 import { getGoals } from './goals.js';
 import { getCore, getOpenTasks, coreText } from './brain.js';
 import { getBriefing } from './briefing.js';
+import { kinbotConfig } from './kinbot-sync.js';
+import { callUpstream } from './upstream.js';
+import { firstUser } from './auth.js';
+
+// 連携先（kincall・kinbot・kinXs）から、その時点の数字を読んで Markdown にする（コネクタが使えない会社のGeminiに読ませるため）
+const monthStart = () => { const d = new Date(Date.now() + 9 * 3600000); return `${d.toISOString().slice(0, 7)}-01`; };
+const ymd = (offsetDays = 0) => new Date(Date.now() + 9 * 3600000 + offsetDays * 86400000).toISOString().slice(0, 10);
+async function upText(key, tool, args) {
+  try { const r = await callUpstream(key, tool, args, 200000); return (r.content || []).map((c) => c.text || '').join('\n'); }
+  catch (e) { return `ERROR: ${e.message}`; }
+}
+function parseRows(t) { try { const j = JSON.parse(t); if (Array.isArray(j)) return j; for (const v of Object.values(j || {})) if (Array.isArray(v)) return v; } catch {} return null; }
+const cell = (v) => String(v === null || v === undefined ? '' : typeof v === 'object' ? JSON.stringify(v) : v).replace(/\|/g, '／').replace(/\s+/g, ' ').slice(0, 120);
+// JSON の配列を表にする。表にできないときは、そのまま（長ければ切る）
+function toTable(t, maxRows = 400, maxCols = 9) {
+  if (String(t).startsWith('ERROR:')) return `読めませんでした（${t.slice(7)}）`;
+  const rows = parseRows(t);
+  if (!rows) return String(t).slice(0, 30000);
+  if (!rows.length) return 'なし';
+  const cols = [...new Set(rows.slice(0, 50).flatMap((r) => Object.keys(r || {})))].slice(0, maxCols);
+  return [`| ${cols.join(' | ')} |`, `| ${cols.map(() => '---').join(' | ')} |`, ...rows.slice(0, maxRows).map((r) => `| ${cols.map((c) => cell(r && r[c])).join(' | ')} |`),
+    rows.length > maxRows ? `\n（ほか ${rows.length - maxRows} 件）` : ''].join('\n');
+}
+// 架電の実績：日×人×結果 を、人ごとの合計（コール・接触・アポ・資料送付）にまとめる
+function callSummary(t) {
+  const rows = parseRows(t);
+  if (!rows) return toTable(t);
+  const by = new Map();
+  for (const r of rows) {
+    const who = r['かけた人'] || r.caller || '不明'; const res = String(r['結果'] || r.result || ''); const n = Number(r['件数'] || r.count || 0);
+    const o = by.get(who) || { calls: 0, contact: 0, apo: 0, doc: 0, days: new Set() };
+    o.calls += n; if (res.startsWith('担当者接触')) o.contact += n; if (res.includes('アポ獲得')) o.apo += n; if (res.includes('資料送付')) o.doc += n;
+    o.days.add(r['日'] || r.day); by.set(who, o);
+  }
+  const pct = (a, b) => (b ? `${Math.round((a / b) * 1000) / 10}%` : '-');
+  return ['| かけた人 | 稼働日 | コール | 接触 | 接触率 | アポ | アポ率（コール比） | 資料送付 |', '| --- | --- | --- | --- | --- | --- | --- | --- |',
+    ...[...by.entries()].sort((a, b) => b[1].apo - a[1].apo || b[1].calls - a[1].calls)
+      .map(([w, o]) => `| ${w} | ${o.days.size} | ${o.calls} | ${o.contact} | ${pct(o.contact, o.calls)} | ${o.apo} | ${pct(o.apo, o.calls)} | ${o.doc} |`)].join('\n');
+}
+async function upstreamFiles(uid) {
+  const owner = await firstUser();
+  if (!kinbotConfig().ready || !owner || owner.id !== uid) return {};
+  const from = monthStart(), to = ymd(0), wk = ymd(-6);
+  const [stats, statsWeek, apo, hours, lists, renewals, aiq] = await Promise.all([
+    upText('kincall', 'list_call_stats', { from, to }), upText('kincall', 'list_call_stats', { from: wk, to }),
+    upText('kincall', 'list_apo_appointments', { from, to }), upText('kincall', 'list_work_hours', { from, to }),
+    upText('kincall', 'list_call_lists_overview', {}), upText('kinxs', 'list_renewals', {}), upText('kinxs', 'ai_question_summary', {}),
+  ]);
+  return {
+    'calls.md': [`# 架電の実績（kincall・${from}〜${to}）`, '', '## 人ごと（今月）', callSummary(stats), '', '## 人ごと（直近7日）', callSummary(statsWeek),
+      '', '## 日×人×結果（今月）', toTable(stats, 600, 4), '', '## 稼働時間（今月）', toTable(hours, 300)].join('\n') + '\n',
+    'apo.md': [`# 今月のアポ（kincall・${from}〜${to}）`, '', toTable(apo, 500)].join('\n') + '\n',
+    'call-lists.md': ['# 架電リストの状況（kincall）', '', toTable(lists, 300)].join('\n') + '\n',
+    'doc-users.md': ['# DOCの更新予定（kinXs）', '', toTable(renewals, 300), '', '# 候補者がAIにした質問のまとめ（kinXs）', '', toTable(aiq, 200)].join('\n') + '\n',
+  };
+}
 
 const jstNow = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo', dateStyle: 'short', timeStyle: 'short' }).format(new Date());
 const TYPE = { event: '出来事', input: '知識', lesson: '教訓', idea: 'アイデア', decision: '判断', value: '価値観', question: '問い', task: 'タスク', goal: '目標', person: '人物' };
@@ -52,6 +108,12 @@ export async function buildExportFiles(uid) {
     '- `recent.md`：直近30日の記録',
     '- `company.md`：企業情報（顧客企業ごとの商談・状況）',
     '- `knowledge.md`：ネオキャリアナレッジ（商材・社内ルールなど会社として共有できる知識）',
+    '- `calls.md`：架電の実績（kincall。インターン生・メンバーごとのコール・接触・アポ、今月と直近7日、稼働時間）',
+    '- `apo.md`：今月のアポの一覧（kincall）',
+    '- `call-lists.md`：架電リストごとの状況（kincall）',
+    '- `doc-users.md`：DOCの更新予定と、候補者がAIにした質問のまとめ（kinXs）',
+    '',
+    '架電・アポ・DOCの数字を聞かれたら、まず calls.md・apo.md・doc-users.md を見て、その数字を根拠に答えてください（最終更新の時点の数字です）。',
   ].join('\n');
 
   const coreMd = coreText(core, []).replace(/\n## 今の未完了タスク\nなし$/, '').trim();
@@ -92,7 +154,9 @@ export async function buildExportFiles(uid) {
   if (!byG.size) K.push('まだありません。');
   for (const [g, list] of byG) { K.push(`## ${g}`); for (const r of list.slice(0, 60)) K.push(`- ${r.content}`); K.push(''); }
 
+  const up = await upstreamFiles(uid).catch((e) => ({ 'calls.md': `読めませんでした：${e.message}\n` }));
   return {
+    ...up,
     'company.md': C.join('\n') + '\n',
     'knowledge.md': K.join('\n') + '\n',
     'README.md': readme + '\n',
