@@ -1676,6 +1676,18 @@ async function setToolIcon(tool,file){
   await api('/api/tool-icons/'+tool,{method:'PUT',body:JSON.stringify({data})});
   ui.toolIcons={...(ui.toolIcons||{}),[tool]:data};
 }
+// 連携するで、画像を貼り付け（Command+V）・アイコンの上に落とすだけでも差し替えられるように
+document.addEventListener('paste',async e=>{
+  if(ui.view!=='connect'||!ui.tool)return;
+  const f=[...(e.clipboardData&&e.clipboardData.files||[])].find(x=>x.type.startsWith('image/'));if(!f)return;
+  e.preventDefault();try{await setToolIcon(ui.tool,f);setStatus('貼り付けた画像をアイコンにしました。');renderConnect($('panel'));}catch(err){setStatus(err.message,true);}
+});
+document.addEventListener('dragover',e=>{if(ui.view==='connect'&&e.target.closest&&e.target.closest('.tool'))e.preventDefault();});
+document.addEventListener('drop',async e=>{
+  const t=ui.view==='connect'&&e.target.closest&&e.target.closest('.tool');if(!t)return;e.preventDefault();
+  const f=[...(e.dataTransfer&&e.dataTransfer.files||[])].find(x=>x.type.startsWith('image/'));if(!f)return;
+  try{await setToolIcon(t.dataset.tool,f);setStatus('アイコンを変えました。');renderConnect($('panel'));}catch(err){setStatus(err.message,true);}
+});
 async function renderConnect(p){
   p.innerHTML=`<p class="lead">読み込んでいます…</p>`;
   try{
@@ -1720,7 +1732,7 @@ function renderToolDetail(){
       <div class="actions" style="justify-content:flex-start"><button type="button" class="ghost" data-node="company">企業情報を見る</button><button class="ghost" type="button" id="uprefresh">つながりを確かめ直す</button></div></div>`;
   }
   box.innerHTML=`<div class="tool-head" style="--c:${t.c}"><span class="tool-ic sm${ui.toolIcons[t.id]?' img':''}">${tIcon(t)}</span><h3>${esc(t.name)}</h3>
-    <span class="tool-iconedit"><label class="linkbtn">アイコンを変える<input type="file" accept="image/png,image/jpeg,image/webp" id="ticonfile" hidden></label>${ui.toolIcons[t.id]?'<button type="button" class="linkbtn" id="ticonreset">元に戻す</button>':''}</span></div>${h}`;
+    <span class="tool-iconedit"><span class="hint">画像を貼り付け（Command+V）でも変えられます</span><label class="linkbtn">アイコンを変える<input type="file" accept="image/png,image/jpeg,image/webp" id="ticonfile" hidden></label>${ui.toolIcons[t.id]?'<button type="button" class="linkbtn" id="ticonreset">元に戻す</button>':''}</span></div>${h}`;
   $('ticonfile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{await setToolIcon(id,f);setStatus('アイコンを変えました。');renderConnect($('panel'));}catch(err){setStatus(err.message,true);}});
   const lg=$('mcplog');if(lg)lg.addEventListener('toggle',async e=>{if(!e.target.open)return;try{const L=(await api('/api/mcp-log'));$('mcplogbody').innerHTML=L.length?`<table class="mlog"><tr><th>時刻</th><th>AI</th><th>呼び出し</th><th>結果</th><th>秒</th><th>大きさ</th></tr>${L.map(r=>`<tr><td>${esc(r.at)}</td><td>${esc(r.client)}</td><td>${esc(r.tool||r.method)}</td><td>${r.status}</td><td>${(r.ms/1000).toFixed(1)}</td><td>${Math.round(r.bytes/1000)}KB</td></tr>`).join('')}</table>`:'まだ呼び出しはありません。';}catch(err){$('mcplogbody').textContent=err.message;}});
   if(id==='google'&&a.google&&a.google.linked&&!ui.spaces)loadSpaces();
