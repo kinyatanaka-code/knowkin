@@ -434,6 +434,42 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
 .mlog{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}.mlog th,.mlog td{text-align:left;padding:3px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
 .up-dot{width:8px;height:8px;border-radius:50%;background:var(--c);display:inline-block;align-self:center}
 
+/* ---- 画面の骨組み：左にメニュー（記憶する・連携する・共有する／脳を見る・タスク・設定）、右に中身 ---- */
+body.in-app .wrap{max-width:1280px;padding-top:16px}
+body.in-app .wrap>.brand,body.in-app .wrap>.tagline{display:none}
+.shell{display:grid;grid-template-columns:230px minmax(0,1fr);gap:22px;align-items:start}
+.side{position:sticky;top:16px;display:flex;flex-direction:column;gap:14px;border:1px solid var(--line);border-radius:20px;background:var(--surface);padding:16px 14px}
+.side-brand{display:flex;align-items:center;gap:10px;font-family:var(--display,inherit);font-size:24px;font-weight:800;color:var(--cyan);padding:2px 4px 12px;border-bottom:1px solid var(--line)}
+.side-main{display:flex;flex-direction:column;gap:10px;padding-bottom:14px;border-bottom:1px solid var(--line)}
+.sidepill{border:2px solid var(--line);border-radius:999px;padding:11px 16px;font-size:16px;font-weight:700;text-align:center;background:transparent;color:var(--ink)}
+.sidepill:hover{border-color:var(--cyan)}
+.sidepill[aria-current="page"]{border-color:var(--cyan);background:color-mix(in srgb,var(--cyan) 16%,transparent);color:var(--ink)}
+.side-sub{display:flex;flex-direction:column;gap:2px}
+.sidelink{background:transparent;border:0;text-align:left;padding:9px 12px;border-radius:10px;font-size:15px;color:var(--muted)}
+.sidelink:hover{color:var(--ink);background:var(--surface2)}
+.sidelink[aria-current="page"]{color:var(--ink);background:var(--surface2);font-weight:700}
+.mainc{min-width:0}
+.topbar{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;border-bottom:1px solid var(--line);padding:4px 2px 12px;margin-bottom:16px}
+.page-title{margin:0;font-size:22px}
+.topbar .space-date{color:var(--muted);font-size:13px}
+.topbar .magnets{margin:0}
+.mainc .panel{margin-top:20px}
+body[data-view="rec"] #panel>h2:first-child,body[data-view="review"] #panel>h2:first-child,body[data-view="core"] #panel>h2:first-child,body[data-view="growth"] #panel>h2:first-child,body[data-view="goals"] #panel>h2:first-child{display:none}
+body:not([data-view="brain"]):not([data-view="layer"]) .mainc .panel{margin-top:0}
+.share-files{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px}
+.share-files li{display:flex;justify-content:space-between;gap:8px;border:1px solid var(--line);border-radius:10px;padding:8px 12px;background:var(--surface);font-size:14px}
+.quick{display:flex;gap:8px;flex-wrap:wrap;margin:0 0 14px}
+@media (max-width:860px){
+  .shell{grid-template-columns:1fr;gap:12px}
+  .side{position:static;padding:12px;gap:10px}
+  .side-brand{font-size:20px;padding:0 2px 10px}
+  .side-main{flex-direction:row;gap:8px;padding-bottom:10px}
+  .sidepill{flex:1;padding:9px 6px;font-size:14px}
+  .side-sub{flex-direction:row;gap:4px}
+  .sidelink{flex:1;text-align:center;padding:7px 4px;font-size:14px}
+  .topbar .magnets{width:100%;justify-content:flex-start}
+}
+
 .review-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px;padding:10px 12px;border-radius:14px;background:var(--panel,#0f1736);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.25)}
 .review-top span{font-size:14px;color:var(--muted)}.review-top b{color:var(--text,#fff);font-size:18px}
 .done-box{margin-top:10px}.done-box summary{cursor:pointer;color:var(--muted);font-size:14px;padding:8px 0}
@@ -464,15 +500,30 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
     </form>
   </section>
 
-  <main id="app" hidden>
-    <div class="space">
-      <div class="space-head"><h2 class="space-title">脳のネットワーク</h2><span class="space-date" id="today"></span></div>
+  <main id="app" class="shell" hidden>
+    <aside class="side" aria-label="メニュー">
+      <div class="side-brand"><img src="/favicon.svg" alt="" width="30" height="30"><span>knowkin</span></div>
+      <nav class="side-main">
+        <button type="button" class="sidepill" data-view="rec">記憶する</button>
+        <button type="button" class="sidepill" data-view="connect">連携する</button>
+        <button type="button" class="sidepill" data-view="share">共有する</button>
+      </nav>
+      <nav class="side-sub">
+        <button type="button" class="sidelink" data-view="brain">脳を見る</button>
+        <button type="button" class="sidelink" id="navtasks">タスク</button>
+        <button type="button" class="sidelink" data-view="account">設定</button>
+      </nav>
+    </aside>
+    <section class="mainc">
+    <header class="topbar"><div><h2 class="page-title" id="pagetitle">脳を見る</h2><span class="space-date" id="today"></span></div><div class="magnets" id="magnets"></div></header>
+    <div class="space" id="space">
+      <div class="space-head"><h2 class="space-title">脳のネットワーク</h2></div>
       <div class="map" id="map" role="group" aria-label="自分の脳の6つの層（出来事・知識・思考・行動・関係・AI履歴）のネットワーク。層を押すとその記憶を見られます"></div>
       <div class="orgs" id="orgs"></div>
     </div>
-    <div class="magnets" id="magnets"></div>
     <section class="panel" id="panel" aria-live="polite"></section>
     <p class="status" id="status" role="status" aria-live="polite"></p>
+    </section>
   </main>
   <div id="actview" class="actview" hidden role="dialog" aria-modal="true" aria-label="行動"></div>
 </div>
@@ -506,7 +557,7 @@ function typeOptions(sel){
 const $=id=>document.getElementById(id);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 let state={units:[],failed:[],core:null,recordings:[]};
-const ui={view:'rec',layer:null,q:'',armed:null,result:null};
+const ui={view:'brain',layer:null,q:'',armed:null,result:null};
 let busy=false;
 
 function setStatus(t,err=false){const s=$('status');s.textContent=t;s.classList.toggle('err',err);}
@@ -528,7 +579,7 @@ function setAuthMode(m){
   $('authNote').textContent=s?(signup.open?(signup.needCode?'アカウントを作るには招待コードが必要です。':'最初のアカウントです。これまでに残した記憶は、このアカウントに引き継がれます。'):'いまは新しいアカウントを作れません。'):'';
   $('authErr').textContent='';
 }
-function showLogin(msg=''){$('login').hidden=false;$('app').hidden=true;setAuthMode(authMode);$('authErr').textContent=msg;}
+function showLogin(msg=''){document.body.classList.remove('in-app');$('login').hidden=false;$('app').hidden=true;setAuthMode(authMode);$('authErr').textContent=msg;}
 async function submitAuth(){
   const body={email:$('a-email').value,password:$('a-pass').value,name:$('a-name').value,code:$('a-code').value};
   if(!body.email||!body.password){$('authErr').textContent='メールアドレスとパスワードを入力してください。';return;}
@@ -553,7 +604,7 @@ async function boot(){
   catch(e){showLogin('サーバーに接続できませんでした。');}
 }
 async function load(){
-  try{state=await api('/api/state');$('login').hidden=true;$('app').hidden=false;render();}
+  try{state=await api('/api/state');$('login').hidden=true;$('app').hidden=false;document.body.classList.add('in-app');render();}
   catch(e){if(e.message!=='unauthorized'){$('app').hidden=false;$('login').hidden=true;render();setStatus('読み込みに失敗しました：'+e.message,true);}}
 }
 
@@ -714,7 +765,7 @@ function renderMap(){
     <button type="button" class="magnet" data-view="goals" aria-pressed="${ui.view==='goals'||ui.view==='goal'}">目的${goalCands().length?`<span class="n">${goalCands().length}</span>`:''}</button>
     <button type="button" class="magnet" data-view="core" aria-pressed="${ui.view==='core'}">核${state.core?'':'<span class="n">まだ</span>'}</button>
     <button type="button" class="magnet" data-view="growth" aria-pressed="${ui.view==='growth'}">脳の成長</button>
-    <button type="button" class="magnet" data-view="account" aria-pressed="${ui.view==='account'}">${esc((state.user&&state.user.name)||'アカウント')}</button>`;
+`;
   const d=new Date();$('today').textContent=`${d.getMonth()+1}月${d.getDate()}日（${'日月火水木金土'[d.getDay()]}）`;
 }
 
@@ -1562,8 +1613,20 @@ async function renderUpstreams(force){
 async function renderAccount(p){
   p.innerHTML=`<h2>アカウント</h2><p class="lead">読み込んでいます…</p>`;
   try{ui.account=ui.account||await api('/api/account');}catch(e){if(e.message!=='unauthorized')p.innerHTML=`<h2>アカウント</h2><p class="status err">${esc(e.message)}</p>`;return;}
-  const a=ui.account;if(ui.view!=='account')return;
-  p.innerHTML=`<h2>アカウント</h2><p class="lead">${esc(a.user.name)}（${esc(a.user.email)}）</p>
+  const a=ui.account;if(ui.view!=='account'&&ui.view!=='connect')return;
+  if(ui.view==='account'){
+    p.innerHTML=`<p class="lead">${esc(a.user.name)}（${esc(a.user.email)}）</p>
+    <h4>パスワードを変える</h4>
+    <div class="sheet">
+      <label class="field"><span>今のパスワード</span><input id="pw-cur" type="password" autocomplete="current-password"></label>
+      <label class="field"><span>新しいパスワード（8文字以上）</span><input id="pw-new" type="password" autocomplete="new-password"></label>
+      <div class="actions" style="justify-content:flex-start"><button class="primary" id="pwBtn">変更する</button></div>
+    </div>
+    <div class="actions" style="justify-content:flex-start;margin-top:18px"><button class="ghost" id="logout">ログアウト</button></div>`;
+    return;
+  }
+  p.innerHTML=`<p class="lead">knowkin とつながる先です。AI（Claude・Gemini・ChatGPT）、kinbot・kincall・kinXs、iPhone・LINE・Gmail。</p>
+  <div class="quick"><button type="button" class="ghost" data-node="ai">AI履歴を見る</button><button type="button" class="ghost" data-node="company">企業情報を見る</button></div>
   <div class="sheet" id="upbox"><h4 style="margin-top:0">連携先情報</h4><p class="hint">確かめています…</p></div>
   <div class="sheet">
     <h4 style="margin-top:0">AIのコネクタURL（Claude・Gemini・ChatGPT）</h4>
@@ -1585,14 +1648,7 @@ async function renderAccount(p){
   <h4>LINE</h4>
   <div id="linebox"><p class="hint">読み込んでいます…</p></div>
   <h4>Gmail・Googleチャット</h4>
-  <div class="sheet">${googleHTML(a.google||{})}</div>
-  <h4>パスワードを変える</h4>
-  <div class="sheet">
-    <label class="field"><span>今のパスワード</span><input id="pw-cur" type="password" autocomplete="current-password"></label>
-    <label class="field"><span>新しいパスワード（8文字以上）</span><input id="pw-new" type="password" autocomplete="new-password"></label>
-    <div class="actions" style="justify-content:flex-start"><button class="primary" id="pwBtn">変更する</button></div>
-  </div>
-  <div class="actions" style="justify-content:flex-start;margin-top:18px"><button class="ghost" id="logout">ログアウト</button></div>`;
+  <div class="sheet">${googleHTML(a.google||{})}</div>`;
   renderUpstreams();
   if(a.google&&a.google.linked&&!ui.spaces)loadSpaces();
   loadLine();
@@ -1663,8 +1719,37 @@ async function renderGrowth(p){
   ${g.hints.length?`<h4>次に伸ばすには</h4><ul class="gr-hints">${g.hints.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}
   ${g.quiz_recent.length?`<details><summary>最近のテストの結果</summary><ul class="list">${g.quiz_recent.map(q=>`<li class="item"><div class="body"><div class="type" style="color:${q.rating==='great'?'#6FCF97':q.rating==='ok'?'#DDB262':'#FF7A9A'}">${q.rating==='great'?'◎ そのとおり':q.rating==='ok'?'○ だいたい':'△ 違う'}</div><p class="content">${esc(q.question)}</p><p class="quote">予想：${esc(q.prediction)}</p>${q.correction?`<p class="quote">あなたの答え：${esc(q.correction)}</p>`:''}</div></li>`).join('')}</ul></details>`:''}`;
 }
-const PANELS={rec:renderRec,layer:renderLayer,review:renderReview,core:renderCore,account:renderAccount,goals:renderGoals,goal:renderGoal,growth:renderGrowth,ask:renderAsk};
-function render(){renderMap();(PANELS[ui.view]||renderRec)($('panel'));if(ui.actOpen)renderActView();}
+const PANELS={rec:renderRec,layer:renderLayer,review:renderReview,core:renderCore,account:renderAccount,connect:renderAccount,share:renderShare,brain:renderBrainHome,goals:renderGoals,goal:renderGoal,growth:renderGrowth,ask:renderAsk};
+const PAGE_TITLE={rec:'記憶する',connect:'連携する',share:'共有する',brain:'脳を見る',layer:'脳を見る',account:'設定',review:'見直し',core:'核',goals:'目的',goal:'目的',growth:'脳の成長',ask:'相談'};
+function renderNav(){
+  for(const b of document.querySelectorAll('.side [data-view]'))b.setAttribute('aria-current',(b.dataset.view===ui.view||(b.dataset.view==='brain'&&ui.view==='layer'))?'page':'false');
+  const t=$('navtasks');if(t)t.setAttribute('aria-current',ui.actOpen?'page':'false');
+  $('pagetitle').textContent=PAGE_TITLE[ui.view]||'knowkin';
+  $('space').hidden=!(ui.view==='brain'||ui.view==='layer');
+  document.body.dataset.view=ui.view;
+}
+function render(){renderMap();renderNav();(PANELS[ui.view]||renderRec)($('panel'));if(ui.actOpen)renderActView();}
+// 脳を見る：脳の下には、見方の案内と最近の記憶だけ
+function renderBrainHome(p){
+  const n=(state.units||[]).filter(u=>!isPeri(u)).length;
+  p.innerHTML=`<p class="hint">脳の層（出来事・知識・思考・行動・関係・AI履歴）や、脳の外の企業情報・ネオキャリアナレッジを押すと、その記憶が見られます。いま ${n.toLocaleString()}件の記憶があります。</p>`;
+}
+// 共有する：コネクタが使えないAI（会社のGeminiなど）に、knowkinの中身を渡す
+async function renderShare(p){
+  p.innerHTML=`<p class="lead">コネクタが使えないAI（会社のGeminiなど）にも、knowkinの中身を読ませます。</p><div class="sheet" id="sharegh"><h4 style="margin-top:0">GitHubに書き出す</h4><p class="hint">確かめています…</p></div>
+  <div class="sheet"><h4 style="margin-top:0">Googleドキュメントに書き出す（Geminiのスキル・Gem用）</h4>
+    <p class="hint" style="margin:0 0 6px">Apps Script から1時間ごとにこのURLを読み、Googleドキュメントに上書きします。読むときはヘッダ Authorization に「Bearer 連携キー」を付けます（連携キーは「連携する」にあります）。</p>
+    <div class="copyrow"><input id="sh-text" readonly value="${esc(location.origin+'/api/export/text')}" aria-label="まとめたテキストのURL"><button class="ghost" data-copy="sh-text">コピー</button></div></div>
+  <div class="sheet"><h4 style="margin-top:0">部署・全社と共有する</h4><p class="hint" style="margin:0">企業情報（部署内）とネオキャリアナレッジ（全社）を、ほかの人と共有できるようにする予定です。いまは自分だけに見えます。</p></div>`;
+  let d;try{d=await api('/api/export/preview');}catch(e){$('sharegh').innerHTML=`<h4 style="margin-top:0">GitHubに書き出す</h4><p class="status err">${esc(e.message)}</p>`;return;}
+  if(ui.view!=='share'||!$('sharegh'))return;
+  const files=Object.entries(d.files||{});
+  $('sharegh').innerHTML=`<h4 style="margin-top:0">GitHubに書き出す</h4>
+    <p class="hint" style="margin:0 0 6px">${d.config.ready?`非公開のリポジトリ <b>${esc(d.config.repo)}</b> に1時間ごとに書き出しています。会社のGeminiでは、チャットの「＋」→「コードをインポート」→ GitHub でこのリポジトリを付けると読めます（付けた時点の中身なので、新しい数字は新しいチャットで付け直してください）。`
+      :'まだ設定されていません。非公開のリポジトリを作り、Railway の変数 GITHUB_EXPORT_REPO（例 kinyatanaka-code/knowkin-context）と GITHUB_EXPORT_TOKEN（そのリポジトリだけ書けるトークン）を入れると、1時間ごとに書き出します。'}</p>
+    ${d.config.ready?'<div class="actions" style="justify-content:flex-start"><button class="primary" type="button" id="ghpush">今すぐ書き出す</button></div>':''}
+    <details style="margin-top:8px"><summary>書き出す中身（${files.length}ファイル）</summary><ul class="share-files">${files.map(([n,c])=>`<li><span>${esc(n)}</span><span class="hint">${Math.round(c.length/100)/10}千字</span></li>`).join('')}</ul></details>`;
+}
 
 // ---- 操作 ----
 const patch=(id,body)=>api('/api/units/'+id,{method:'PATCH',body:JSON.stringify(body)});
@@ -1705,7 +1790,7 @@ document.addEventListener('click',async e=>{
     if(t.dataset.msadd){const v=$('ms-new').value.trim();if(!v){setStatus('道のりの名前を入れてください。',true);return;}await api(`/api/goals/${t.dataset.msadd}/milestones`,{method:'POST',body:JSON.stringify({title:v})});await load();return;}
     if(t.dataset.node==='act'){openAct(t);return;}
     if(t.dataset.actclose!==undefined){closeAct();return;}
-    if(t.dataset.acttab){const to=t.dataset.acttab;if(to!=='brain')ui.view=to;closeAct();if(to!=='brain')$('panel').scrollIntoView({block:'start'});return;}
+    if(t.dataset.acttab){const to=t.dataset.acttab;ui.view=to;closeAct();render();if(to!=='brain')$('panel').scrollIntoView({block:'start'});return;}
     if(t.dataset.actgoals!==undefined){ui.view='goals';closeAct();$('panel').scrollIntoView({block:'start'});return;}
     if(t.dataset.actgoal){ui.view='goal';ui.goal=Number(t.dataset.actgoal);closeAct();$('panel').scrollIntoView({block:'start'});return;}
     if(t.dataset.tgoal){const id=Number(t.dataset.tgoal);ui.tgoal=ui.tgoal===id?null:id;render();return;}
@@ -1722,6 +1807,8 @@ document.addEventListener('click',async e=>{
     if(t.dataset.tshift!==undefined){const n=Number(t.dataset.tshift);ui.tdate=n===0?new Date():shiftDate(ui.tscope||'day',ui.tdate||new Date(),n);render();return;}
     if(t.id==='t-add'){addTaskUI();return;}
     if(t.dataset.area){const u=localUnit(t.dataset.area);const a=areaOf(u)==='life'?'work':'life';u.area=a;render();await patch(u.id,{area:a});return;}
+    if(t.id==='navtasks'){openAct(t);renderNav();return;}
+    if(t.id==='ghpush'){t.disabled=true;setStatus('GitHubに書き出しています…');try{const r=await api('/api/export/github',{method:'POST'});setStatus(r.ok?(r.written.length?`書き出しました（${r.written.join('、')}）`:'変わったところはありませんでした。'):(r.error||'書き出せませんでした'),!r.ok);}finally{t.disabled=false;}return;}
     if(t.id==='uprefresh'){t.disabled=true;await renderUpstreams(true);return;}
     if(t.dataset.coopen!==undefined){ui.coOpen=t.dataset.coopen||null;ui.coDetail=null;renderCompanies($('panel'));$('panel').scrollIntoView({behavior:'smooth',block:'start'});return;}
     if(t.id==='kbsync'){t.disabled=true;setStatus('kinbot から取り込んでいます…');try{const r=await api('/api/kinbot/sync',{method:'POST'});setStatus(r.skipped?r.skipped:'取り込みました。');}finally{ui.kinbotStatus=null;ui.companies=null;await load();}return;}
