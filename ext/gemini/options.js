@@ -1,7 +1,8 @@
 // 連携キーと「残す／残さない」を決める画面
 (async () => {
   const $ = (id) => document.getElementById(id);
-  const s = await chrome.storage.local.get(['key', 'enabled', 'mobile', 'last', 'count', 'queue', 'lastSweep']);
+  const s = await chrome.storage.local.get(['key', 'enabled', 'mobile', 'last', 'count', 'queue', 'lastSweep', 'selfUpdated']);
+  document.querySelector('h1').insertAdjacentHTML('beforeend', `<span style="font-size:11px;color:#8a9893;font-weight:400">版 ${chrome.runtime.getManifest().version}${s.selfUpdated ? `（${s.selfUpdated.at} に自動で更新）` : ''}</span>`);
   $('key').value = s.key || '';
   $('enabled').checked = s.enabled !== false;
   $('mobile').checked = s.mobile !== false;
