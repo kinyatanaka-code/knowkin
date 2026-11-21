@@ -10,7 +10,9 @@ const PRESETS = {
   deepseek: { keyEnv: 'DEEPSEEK_API_KEY', model: 'deepseek-chat', baseURL: 'https://api.deepseek.com' },
 };
 
-export const provider = (process.env.AI_PROVIDER || 'none').toLowerCase();
+// Gemini は KNOWKIN_USE_GEMINI=1 のときだけ使う（2026-11-21 田中さん「knowkinの分だけ Gemini のトークンは使わないようにしたい」）
+const wanted = (process.env.AI_PROVIDER || 'none').toLowerCase();
+export const provider = wanted === 'gemini' && process.env.KNOWKIN_USE_GEMINI !== '1' ? 'none' : wanted;
 const preset = PRESETS[provider];
 if (!preset) {
   console.error(`AI_PROVIDER は ${Object.keys(PRESETS).join(' / ')} のどれかにしてください（今は "${provider}"）`);
