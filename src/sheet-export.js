@@ -58,7 +58,11 @@ export async function buildExportTables(uid) {
     safe('議事録', async () => flat((await rows('kinbot', 'list_meetings', { from, to })).filter((m) => jstDate(m.created_at) >= from), {
       日: (m) => jstDate(m.created_at), 題名: 'title', 担当: 'rep_name', メール: (m) => short(m.owner),
       概要: (m) => m.summary && m.summary.overview, 決まったこと: (m) => m.summary && m.summary.agreements, ポイント: (m) => cellOf(m.summary && m.summary.key_points, 4000),
-      次のアクション: (m) => m.summary && (m.summary.next_actions || m.summary.todos), bot_id: 'bot_id',
+      やること: (m) => m.summary && m.summary.action_items, お客様の懸念: (m) => m.summary && m.summary.customer_concerns,
+      AIの見立て: (m) => m.analysis && m.analysis.deal_status, 見立ての理由: (m) => m.analysis && m.analysis.deal_status_reason, 次の一手: (m) => m.analysis && m.analysis.next_step,
+      予算: (m) => m.analysis && m.analysis.bant && m.analysis.bant.budget, 時期: (m) => m.analysis && m.analysis.bant && m.analysis.bant.timeline, 決める人: (m) => m.analysis && m.analysis.bant && m.analysis.bant.authority,
+      競合: (m) => m.analysis && m.analysis.competitors, 反論と切り返し: (m) => m.analysis && m.analysis.objections,
+      スコア: (m) => m.analysis && m.analysis.scores, 営業の話す割合: (m) => m.metrics && m.metrics.repTalkPct, アポを取った人: 'apo_setter', SF: 'sf_url', bot_id: 'bot_id',
     })),
     safe('アポ', async () => plain(await rows('kincall', 'list_apo_appointments', { from, to }))),
     safe('架電（日×人×結果）', async () => plain(await rows('kincall', 'list_call_stats', { from, to }))),
