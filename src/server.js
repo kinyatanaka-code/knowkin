@@ -229,7 +229,7 @@ api.post('/kinbot/sync', wrap(async (req, res) => res.json(await syncKinbot(req.
 api.get('/export/text', wrap(async (req, res) => res.type('text/plain; charset=utf-8').send(await buildExportText(req.uid))));
 // 連携先の中身を表で（Apps Script がスプレッドシートに書き、会社のGeminiのスキルに付ける）
 api.get('/export/tables', wrap(async (req, res) => {
-  try { res.json(await buildExportTables(req.uid)); } catch (e) { res.status(400).json({ error: e.message }); }
+  try { res.json(await buildExportTables(req.uid, req.query.part === 'history' ? 'history' : 'recent')); } catch (e) { res.status(400).json({ error: e.message }); }
 }));
 api.get('/export/preview', wrap(async (req, res) => { res.json({ config: { repo: exportConfig().repo, ready: exportConfig().ready }, files: await buildExportFiles(req.uid) }); }));
 api.post('/export/github', wrap(async (req, res) => {
