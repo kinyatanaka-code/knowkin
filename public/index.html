@@ -1403,7 +1403,7 @@ function renderCompanies(p){
   }
   const st=ui.kinbotStatus;
   p.innerHTML=`<h2>企業情報</h2><p class="lead">${esc(LAYER_INFO.company)}</p>
-    <p class="hint" id="kbst">${st?(st.ready?`kinbot・kincall・kinXs から ${st.companies.toLocaleString()}社・${st.records.toLocaleString()}件を取り込み済み。${st.kinds.some(k=>!k.done)?'過去の分を1時間ごとに少しずつ取り込んでいます。':'毎時15分に新しい分を取り込みます。'}${st.kinds.filter(k=>k.last_error).map(k=>`（${esc(k.label)}：${esc(k.last_error)}）`).join('')} <button type="button" class="linkbtn" id="kbsync">今すぐ取り込む</button>`
+    <p class="hint" id="kbst">${st?(st.ready?`kinbot・kincall・kinXs から ${st.companies.toLocaleString()}社・${st.records.toLocaleString()}件を取り込み済み。${st.kinds.some(k=>!k.done)?'過去の分を1時間ごとに少しずつ取り込んでいます。':'毎時15分に新しい分を取り込みます。'}${(()=>{const errs=[...new Set(st.kinds.filter(k=>k.last_error).map(k=>k.last_error))];return errs.length?`<br>前回の取り込みでエラー：${errs.map(esc).join('／')}`:'';})()} <button type="button" class="linkbtn" id="kbsync">今すぐ取り込む</button>`
       :'kinbot・kincall・kinXs からの取り込みは、まだ設定されていません（Railway の KINBOT_URL と KINBOT_TOKEN）。'):'取り込みの状況を確かめています…'}</p>
     <input class="search" id="q" type="search" placeholder="会社名・内容で探す" aria-label="企業情報を探す"><div id="colist"><p class="empty">読み込んでいます…</p></div>`;
   const qi=$('q');qi.value=ui.q;let tm=0;qi.addEventListener('input',e=>{ui.q=e.target.value;clearTimeout(tm);tm=setTimeout(async()=>{await loadCompanies();renderCoList();},300);});
