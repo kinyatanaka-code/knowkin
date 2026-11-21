@@ -198,6 +198,8 @@ api.get('/upstreams', wrap(async (req, res) => {
   const list = await upstreamTools(req.query.refresh === '1');
   res.json({ owner: Boolean(owner && owner.id === req.uid), list: list.map((u) => ({ key: u.key, label: u.label, about: u.about, ok: u.ok, error: u.error || '', tools: u.tools.map((t) => t.name) })) });
 }));
+api.get('/mcp-log', wrap(async (req, res) => res.json((await pool.query(
+  `SELECT client, method, tool, status, ms, bytes, to_char(at AT TIME ZONE 'Asia/Tokyo', 'MM/DD HH24:MI:SS') AS at FROM mcp_log WHERE user_id = $1 ORDER BY id DESC LIMIT 30`, [req.uid])).rows)));
 api.get('/kinbot/status', wrap(async (req, res) => res.json(await kinbotStatus(req.uid))));
 api.post('/kinbot/sync', wrap(async (req, res) => res.json(await syncKinbot(req.uid, { maxPages: 4 }))));
 api.get('/export/text', wrap(async (req, res) => res.type('text/plain; charset=utf-8').send(await buildExportText(req.uid))));
@@ -327,12 +329,29 @@ function aiKeyFromClient(name) {
   if (n.includes('copilot') || n.includes('microsoft')) return 'copilot';
   return 'ai';
 }
-async function serveMcp(uid, req, res, ai = '') {
+// AIからの呼び出しを記録する（どのAIが・何を呼んで・何秒かかって・どれだけ返したか）
+function logMcp(uid, client, req, res) {
+  const t0 = Date.now(); let bytes = 0;
+  const w = res.write.bind(res), e = res.end.bind(res);
+  res.write = (c, ...a) => { if (c) bytes += Buffer.byteLength(c); return w(c, ...a); };
+  res.end = (c, ...a) => { if (c && typeof c !== 'function') bytes += Buffer.byteLength(c); return e(c, ...a); };
+  const msgs = Array.isArray(req.body) ? req.body : [req.body || {}];
+  const method = msgs.map((m) => m && m.method).filter(Boolean).join(',').slice(0, 100);
+  const tool = msgs.map((m) => m && m.params && m.params.name).filter(Boolean).join(',').slice(0, 100);
+  res.on('finish', () => {
+    pool.query('INSERT INTO mcp_log(user_id, client, method, tool, status, ms, bytes) VALUES($1,$2,$3,$4,$5,$6,$7)',
+      [uid, String(client || '').slice(0, 80), method, tool, res.statusCode, Date.now() - t0, bytes]).catch(() => {});
+    if (Math.random() < 0.05) pool.query(`DELETE FROM mcp_log WHERE at < now() - interval '3 days'`).catch(() => {});
+  });
+}
+async function serveMcp(uid, req, res, ai = '', client = '') {
+  logMcp(uid, client || ai || 'キー付きURL', req, res);
   // 連携先の道具は、連携先の鍵を設定した人（いちばん最初のアカウント）だけに出す。ほかの人に会社のデータを読ませないため
   const owner = await firstUser();
   const upstream = owner && owner.id === uid ? await upstreamTools().catch(() => []) : [];
   const server = buildMcpServer(uid, { ai, upstream });
-  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  // 結果は1回のJSONで返す（ストリームで返すと、AIによっては受け取れずに待ち続けるため）
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
   res.on('close', () => { transport.close(); server.close(); });
   await server.connect(transport);
   await transport.handleRequest(req, res, req.body);
@@ -343,7 +362,8 @@ app.post('/mcp', async (req, res) => {
     const h = req.get('authorization') || '';
     const uid = h.startsWith('Bearer ') ? await userIdFromAccessToken(h.slice(7)) : null;
     if (!uid) return mcpUnauthorized(req, res);
-    await serveMcp(uid, req, res, aiKeyFromClient(await clientNameFromAccessToken(h.slice(7))));
+    const client = await clientNameFromAccessToken(h.slice(7));
+    await serveMcp(uid, req, res, aiKeyFromClient(client), client);
   } catch (e) {
     console.error('MCP error', e);
     if (!res.headersSent) res.status(500).json({ jsonrpc: '2.0', error: { code: -32603, message: 'Internal error' }, id: null });

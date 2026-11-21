@@ -431,6 +431,7 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
 .realm-sel{max-width:11em}
 .up-row{border:1px solid var(--line);border-left:3px solid var(--c);border-radius:12px;padding:10px 12px;margin:0 0 8px;background:var(--surface)}
 .up-head{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap}
+.mlog{width:100%;border-collapse:collapse;font-size:12px;margin-top:6px}.mlog th,.mlog td{text-align:left;padding:3px 6px;border-bottom:1px solid var(--line);white-space:nowrap}
 .up-dot{width:8px;height:8px;border-radius:50%;background:var(--c);display:inline-block;align-self:center}
 
 .review-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;justify-content:space-between;gap:10px;margin:0 0 14px;padding:10px 12px;border-radius:14px;background:var(--panel,#0f1736);border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.25)}
@@ -1554,7 +1555,9 @@ async function renderUpstreams(force){
     :'<p class="hint">連携先はまだありません。Railway の変数に KINBOT_URL と KINBOT_TOKEN を入れると、kinbot・kincall・kinXs につながります。</p>';
   box.innerHTML=`<h4 style="margin-top:0">連携先情報</h4>
     <p class="hint" style="margin:0 0 8px">knowkin につないだAI（Claude・Gemini・ChatGPT）は、knowkin だけつなげば、ここにある連携先の記録もその場で調べられます（読み取りだけ）。企業ごとの記録は毎時15分に企業情報へ取り込みます。${d.owner?'':'<br>連携先の道具は、連携先の鍵を設定した人のアカウントでだけ使えます。'}</p>
-    ${rows}<div class="actions" style="justify-content:flex-start;margin-top:8px"><button class="ghost" type="button" id="uprefresh">つながりを確かめ直す</button></div>`;
+    ${rows}<div class="actions" style="justify-content:flex-start;margin-top:8px"><button class="ghost" type="button" id="uprefresh">つながりを確かめ直す</button></div>
+    <details id="mcplog" style="margin-top:10px"><summary>AIからの呼び出し（直近30件）</summary><div class="hint" id="mcplogbody">読み込んでいます…</div></details>`;
+  $('mcplog').addEventListener('toggle',async e=>{if(!e.target.open)return;try{const L=await api('/api/mcp-log');$('mcplogbody').innerHTML=L.length?`<table class="mlog"><tr><th>時刻</th><th>AI</th><th>呼び出し</th><th>結果</th><th>秒</th><th>大きさ</th></tr>${L.map(r=>`<tr><td>${esc(r.at)}</td><td>${esc(r.client)}</td><td>${esc(r.tool||r.method)}</td><td>${r.status}</td><td>${(r.ms/1000).toFixed(1)}</td><td>${Math.round(r.bytes/1000)}KB</td></tr>`).join('')}</table>`:'まだ呼び出しはありません。';}catch(err){$('mcplogbody').textContent=err.message;}});
 }
 async function renderAccount(p){
   p.innerHTML=`<h2>アカウント</h2><p class="lead">読み込んでいます…</p>`;

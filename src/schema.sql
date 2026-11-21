@@ -245,3 +245,17 @@ CREATE TABLE IF NOT EXISTS biz_sync (
   last_error  TEXT NOT NULL DEFAULT '',
   PRIMARY KEY (user_id, kind)
 );
+
+-- AIからの呼び出しの記録（つながらない・止まるときに、どこで止まっているかを見るため。直近だけ残す）
+CREATE TABLE IF NOT EXISTS mcp_log (
+  id         SERIAL PRIMARY KEY,
+  user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  client     TEXT NOT NULL DEFAULT '',
+  method     TEXT NOT NULL DEFAULT '',
+  tool       TEXT NOT NULL DEFAULT '',
+  status     INTEGER NOT NULL DEFAULT 0,
+  ms         INTEGER NOT NULL DEFAULT 0,
+  bytes      INTEGER NOT NULL DEFAULT 0,
+  at         TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS mcp_log_user_idx ON mcp_log(user_id, at DESC);
