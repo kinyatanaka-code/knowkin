@@ -92,3 +92,23 @@ export async function buildReport(uid) {
     [...cb.entries()].sort((a, b) => b[1].a - a[1].a).map(([w, o]) => [w, o.days.size, o.c, pct(o.t, o.c), o.a, pct(o.a, o.c)])), '');
   return out.join('\n');
 }
+
+// 議事録を1件ずつの文章にして返す（Apps Script が1件1ドキュメントにしてドライブに置き、Gemini が会社名で探して読む）。
+// Gemini は大きなスプレッドシートから1件を探し出せず、お礼メールが議事録なしの一般的な文になっていたため（2026-11-22）
+const lines = (v) => (Array.isArray(v) ? v.map((x) => `・${typeof x === 'object' ? JSON.stringify(x) : x}`).join('\n') : v ? String(v) : '');
+export async function buildMeetingDocs(uid, days = 60) {
+  const owner = await firstUser();
+  if (!kinbotConfig().ready || !owner || owner.id !== uid) throw new Error('連携先（kinbot）が設定されていません');
+  const from = ymd(jst(-days));
+  const list = await rows('kinbot', 'list_meetings', { from });
+  return list.filter((m) => m.bot_id && m.summary).map((m) => {
+    const s = m.summary || {}, a = m.analysis || {}, b = a.bant || {};
+    const date = ymd(new Date(new Date(m.created_at).getTime() + 9 * 3600000));
+    const sec = (h, v) => { const t = lines(v); return t ? `■ ${h}\n${t}` : ''; };
+    const text = [`kinbot 議事録：${m.title}`, `商談日：${date}　担当：${m.rep_name || m.owner_name || short(m.owner)}（${short(m.owner)}）`, m.sf_url ? `Salesforce：${m.sf_url}` : '', m.drive_link ? `録画：${m.drive_link}` : '',
+      sec('概要', s.overview), sec('決まったこと', s.agreements), sec('ポイント（担当者・採用・予算・決裁・懸念など）', s.key_points), sec('それぞれがやること', s.action_items), sec('お客様の懸念', s.customer_concerns),
+      sec('ニーズ', a.needs), sec('予算', b.budget), sec('時期', b.timeline), sec('決める人', b.authority), sec('競合', a.competitors), sec('反論と切り返し', a.objections), sec('前向きなサイン', a.buying_signals),
+      sec('お客様の反応', a.customer_reactions), sec('AI の見立て', a.deal_status ? `${a.deal_status}：${a.deal_status_reason || ''}` : ''), sec('次の一手', a.next_step)].filter(Boolean).join('\n\n');
+    return { id: m.bot_id, title: m.title, date, rep: m.rep_name || short(m.owner), updated: m.updated_at || m.created_at, text };
+  });
+}
