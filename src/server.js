@@ -9,6 +9,7 @@ import { migrate, pool } from './db.js';
 import { companyDetail, kinbotStatus, listCompanies, syncKinbot } from './kinbot-sync.js';
 import { upstreamTools } from './upstream.js';
 import { buildExportFiles, buildExportText, exportConfig, exportToGitHub } from './github-export.js';
+import { buildExportTables } from './sheet-export.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
@@ -226,6 +227,10 @@ api.get('/mcp-log', wrap(async (req, res) => res.json((await pool.query(
 api.get('/kinbot/status', wrap(async (req, res) => res.json(await kinbotStatus(req.uid))));
 api.post('/kinbot/sync', wrap(async (req, res) => res.json(await syncKinbot(req.uid, { maxPages: 4 }))));
 api.get('/export/text', wrap(async (req, res) => res.type('text/plain; charset=utf-8').send(await buildExportText(req.uid))));
+// 連携先の中身を表で（Apps Script がスプレッドシートに書き、会社のGeminiのスキルに付ける）
+api.get('/export/tables', wrap(async (req, res) => {
+  try { res.json(await buildExportTables(req.uid)); } catch (e) { res.status(400).json({ error: e.message }); }
+}));
 api.get('/export/preview', wrap(async (req, res) => { res.json({ config: { repo: exportConfig().repo, ready: exportConfig().ready }, files: await buildExportFiles(req.uid) }); }));
 api.post('/export/github', wrap(async (req, res) => {
   try { const written = await exportToGitHub(req.uid); res.json({ ok: true, written }); }
