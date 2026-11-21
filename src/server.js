@@ -10,6 +10,7 @@ import { companyDetail, kinbotStatus, listCompanies, syncKinbot } from './kinbot
 import { upstreamTools } from './upstream.js';
 import { buildExportFiles, buildExportText, exportConfig, exportToGitHub } from './github-export.js';
 import { buildExportTables } from './sheet-export.js';
+import { buildReport } from './report-export.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
@@ -229,6 +230,10 @@ api.get('/mcp-log', wrap(async (req, res) => res.json((await pool.query(
 api.get('/kinbot/status', wrap(async (req, res) => res.json(await kinbotStatus(req.uid))));
 api.post('/kinbot/sync', wrap(async (req, res) => res.json(await syncKinbot(req.uid, { maxPages: 4 }))));
 api.get('/export/text', wrap(async (req, res) => res.type('text/plain; charset=utf-8').send(await buildExportText(req.uid))));
+// 先に数えておいた分析レポート（Gemini が件数・率を数え間違えないように）
+api.get('/export/report', wrap(async (req, res) => {
+  try { res.type('text/plain; charset=utf-8').send(await buildReport(req.uid)); } catch (e) { res.status(400).json({ error: e.message }); }
+}));
 // 連携先の中身を表で（Apps Script がスプレッドシートに書き、会社のGeminiのスキルに付ける）
 api.get('/export/tables', wrap(async (req, res) => {
   try { res.json(await buildExportTables(req.uid, req.query.part === 'history' ? 'history' : 'recent')); } catch (e) { res.status(400).json({ error: e.message }); }

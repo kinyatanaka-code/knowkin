@@ -5,13 +5,13 @@ import { callUpstream } from './upstream.js';
 import { kinbotConfig } from './kinbot-sync.js';
 import { firstUser } from './auth.js';
 
-const jst = (offsetDays = 0) => new Date(Date.now() + 9 * 3600000 + offsetDays * 86400000);
-const ymd = (d) => d.toISOString().slice(0, 10);
+export const jst = (offsetDays = 0) => new Date(Date.now() + 9 * 3600000 + offsetDays * 86400000);
+export const ymd = (d) => d.toISOString().slice(0, 10);
 // 先月の1日（先月と今月を比べられるように、2か月分を入れる）
-const prevMonthStart = () => { const d = jst(); return `${new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1)).toISOString().slice(0, 10)}`; };
-const jstDate = (t) => { const d = new Date(t); return t && !isNaN(d) ? ymd(new Date(d.getTime() + 9 * 3600000)) : ''; };
+export const prevMonthStart = () => { const d = jst(); return `${new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1)).toISOString().slice(0, 10)}`; };
+export const jstDate = (t) => { const d = new Date(t); return t && !isNaN(d) ? ymd(new Date(d.getTime() + 9 * 3600000)) : ''; };
 
-async function rows(key, tool, args) {
+export async function rows(key, tool, args) {
   const r = await callUpstream(key, tool, args, 50_000_000);
   const t = (r.content || []).map((c) => c.text || '').join('\n');
   if (r.isError) throw new Error(t.slice(0, 200));
@@ -36,7 +36,9 @@ function flat(list, pick) {
 
 // 項目はそのまま、値だけセルに入る形にする
 const plain = (list, max) => list.map((r) => Object.fromEntries(Object.entries(r || {}).map(([k, v]) => [k, cellOf(v, max)])));
-const short = (e) => String(e || '').split('@')[0];
+export const short = (e) => String(e || '').split('@')[0];
+// SF の商談の段階を、受注・失注・進行中・SF未連携の4つに分ける（kinbot は 2026-11-22 から独自の判定をやめ、SF の段階だけを返す）
+export const stageKind = (d) => { const st = String((d && (d.sf_stage || d.status)) || ''); if (!st) return 'SF未連携'; if (/^08|受注/.test(st)) return '受注'; if (/^99|失注/.test(st)) return '失注'; return '進行中'; };
 
 export async function buildExportTables(uid, part = 'recent') {
   const owner = await firstUser();
@@ -48,7 +50,7 @@ export async function buildExportTables(uid, part = 'recent') {
 
   await Promise.all([
     safe('商談', async () => flat(await rows('kinbot', 'list_deals', { from, to }), {
-      初回商談日: (r) => String(r.first_meeting_date || '').slice(0, 10), 会社: 'company_name', 担当: (r) => short(r.owner), 状態: 'status', 種類: 'deal_kind', チーム: 'team',
+      初回商談日: (r) => String(r.first_meeting_date || '').slice(0, 10), 会社: 'company_name', 担当: (r) => short(r.owner), SFの段階: (r) => r.sf_stage || r.status || '', SFの商談: 'sf_opportunity', 種類: 'deal_kind', チーム: 'team',
       業界: (r) => r.company_profile && r.company_profile.industry, 従業員数: (r) => r.company_profile && r.company_profile.employees, 案件ID: 'deal_id',
     })),
     safe('商談の判定', async () => flat(await rows('kinbot', 'get_deal_events', { from, to }), {
@@ -83,16 +85,16 @@ export async function buildExportTables(uid, part = 'recent') {
 }
 
 // ---- 過去1年（1日1回）：明細は軽いものだけ、重いもの（架電・議事録）は月×人にまとめる ----
-const monthsBack = (n) => { const d = jst(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - n, 1)).toISOString().slice(0, 10); };
+export const monthsBack = (n) => { const d = jst(); return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - n, 1)).toISOString().slice(0, 10); };
 const monthOf = (t) => String(t || '').slice(0, 7);
-const NOT_DEAL = /カジュアル面談|一次面接|\.mp4|【ユ\/フォ】|【キックオフ】/;
+export const NOT_DEAL = /カジュアル面談|一次面接|\.mp4|【ユ\/フォ】|【キックオフ】/;
 
 async function buildHistory(tabs, safe, to) {
   const from = monthsBack(11);
   let deals = [], events = [], apo = [];
   await Promise.all([
     safe('商談（過去1年）', async () => { deals = await rows('kinbot', 'list_deals', { from, to }); return flat(deals, {
-      初回商談日: (r) => String(r.first_meeting_date || '').slice(0, 10), 会社: 'company_name', 担当: (r) => short(r.owner), 状態: 'status', 種類: 'deal_kind',
+      初回商談日: (r) => String(r.first_meeting_date || '').slice(0, 10), 会社: 'company_name', 担当: (r) => short(r.owner), SFの段階: (r) => r.sf_stage || r.status || '', SFの商談: 'sf_opportunity', 種類: 'deal_kind',
       業界: (r) => r.company_profile && r.company_profile.industry, 従業員数: (r) => r.company_profile && r.company_profile.employees, 案件ID: 'deal_id' }); }),
     safe('商談の判定（過去1年）', async () => { events = await rows('kinbot', 'get_deal_events', { from, to }); return flat(events, {
       日: (r) => String(r.event_date || '').slice(0, 10), 会社: 'company_name', 案件の担当: (r) => short(r.owner), 商談した人: (r) => short(r.meeting_owner), 種別: 'event_type', 判定: 'meeting_kind',
@@ -116,12 +118,11 @@ async function buildHistory(tabs, safe, to) {
   // 商談・判定・アポを、月×人の数にまとめる（傾向を見るための表）
   await safe('商談（月×人）', async () => {
     const by = new Map();
-    const get = (m, who) => { const k = `${m}|${who}`; if (!by.has(k)) by.set(k, { 月: m, 人: who, 初回商談: 0, 受注: 0, 進行中: 0, 再商談実施済み: 0, '失注(未定)': 0, 失注その他: 0, 判定した初回: 0, 次回が決まった初回: 0, 取ったアポ: 0 }); return by.get(k); };
+    const get = (m, who) => { const k = `${m}|${who}`; if (!by.has(k)) by.set(k, { 月: m, 人: who, 初回商談: 0, 受注: 0, 進行中: 0, 失注: 0, SF未連携: 0, 判定した初回: 0, 次回が決まった初回: 0, 取ったアポ: 0 }); return by.get(k); };
     for (const d of deals) {
       if (NOT_DEAL.test(d.company_name || '')) continue;
       const o = get(monthOf(d.first_meeting_date), short(d.owner)); o.初回商談++;
-      const st = String(d.status || '');
-      if (st === '受注') o.受注++; else if (st === '進行中') o.進行中++; else if (st.startsWith('再商談')) o.再商談実施済み++; else if (st === '失注(未定)') o['失注(未定)']++; else if (st.startsWith('失注')) o.失注その他++;
+      const k = stageKind(d); if (k === '受注') o.受注++; else if (k === '失注') o.失注++; else if (k === '進行中') o.進行中++; else o.SF未連携++;
     }
     for (const e of events) {
       if (NOT_DEAL.test(e.company_name || '') || e.meeting_kind !== '初回商談') continue;
