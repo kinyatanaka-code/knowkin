@@ -19,11 +19,12 @@
 <body>
   <div class="card">
     <h1><svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="2" y="2" width="20" height="20" rx="7" fill="#e8f5ef"/><path d="M7 9.5c0-1.4 1.1-2.5 2.5-2.5h5c1.4 0 2.5 1.1 2.5 2.5v3c0 1.4-1.1 2.5-2.5 2.5H11l-2.5 2v-2c-.8-.3-1.5-1.1-1.5-2z" fill="#1d9e75"/><circle cx="17" cy="7" r="1.6" fill="#5DCAA5"/></svg>knowkin for Gemini</h1>
-    <p>Gemini（gemini.google.com）でのやりとりを、押さなくても knowkin の AI履歴に残します。答えが書き終わって5秒たったら送ります。</p>
+    <p>Gemini（gemini.google.com）でのやりとりを、押さなくても knowkin の AI履歴に残します。答えが書き終わって5秒たったら送ります。スマホの Gemini アプリの会話も、このパソコンの Chrome が開いている間、30分ごとに拾います。</p>
     <label for="key">knowkin の連携キー（設定にあります）</label>
     <input id="key" type="password" placeholder="ここに貼る" autocomplete="off">
     <div class="row"><input id="enabled" type="checkbox"><label for="enabled" style="margin:0">会話を残す</label></div>
-    <div class="row"><button id="save" type="button">保存する</button></div>
+    <div class="row"><input id="mobile" type="checkbox"><label for="mobile" style="margin:0">スマホの会話も拾う（30分ごと・裏のタブで最近の会話を開いて読む）</label></div>
+    <div class="row"><button id="save" type="button">保存する</button><button id="now" type="button" style="background:#e8f5ef;color:#0d5b47">いますぐ拾う</button></div>
     <div class="st" id="st"></div>
   </div>
 <script src="options.js"></script>

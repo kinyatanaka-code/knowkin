@@ -28,6 +28,8 @@ async function retry() {
   await chrome.storage.local.set({ queue: left.slice(-200) });
 }
 chrome.runtime.onMessage.addListener((m) => {
+  if (m && m.type === 'sweep-list') { if (sweeping) sweeping.ids = m.ids || []; return; }
+  if (m && m.type === 'sweep-now') { sweep(); return; }
   if (!m || m.type !== 'turn') return;
   (async () => {
     if (await send(m)) { const { count = 0 } = await chrome.storage.local.get('count'); await chrome.storage.local.set({ count: count + 1 }); return; }
@@ -35,4 +37,32 @@ chrome.runtime.onMessage.addListener((m) => {
   })();
 });
 chrome.alarms?.create('retry', { periodInMinutes: 5 });
-chrome.alarms?.onAlarm.addListener((a) => { if (a.name === 'retry') retry(); });
+chrome.alarms?.create('sweep', { periodInMinutes: 30, delayInMinutes: 1 });
+chrome.alarms?.onAlarm.addListener((a) => { if (a.name === 'retry') retry(); if (a.name === 'sweep') sweep(); });
+
+// ---- スマホの会話も拾う：30分ごとに、裏のタブで Gemini の一覧を開き、最近の会話を1つずつ開いて読む ----
+//   パソコンの Chrome が開いている間だけ動く。読んだやりとりは knowkin が ref で二度入れない
+let sweeping = null;
+// 待っている間に裏の係が眠らないよう、1秒ごとに軽い呼び出しをはさむ（Chrome は30秒なにもしないと係を止めるため）
+const wait = async (ms) => { for (let t = 0; t < ms; t += 1000) { await new Promise((r) => setTimeout(r, Math.min(1000, ms - t))); await chrome.runtime.getPlatformInfo(); } };
+async function sweep() {
+  const { key, enabled = true, mobile = true } = await chrome.storage.local.get(['key', 'enabled', 'mobile']);
+  if (!key || !enabled || !mobile || sweeping) return;
+  sweeping = { tab: null, ids: null };
+  try {
+    const tab = await chrome.tabs.create({ url: 'https://gemini.google.com/app?knowkin_sweep=1', active: false, pinned: true });
+    sweeping.tab = tab.id;
+    for (let i = 0; i < 30 && !sweeping.ids; i++) await wait(1000);   // 一覧のIDが返ってくるのを待つ
+    const ids = sweeping.ids || [];
+    for (const id of ids) {
+      await chrome.tabs.update(tab.id, { url: `https://gemini.google.com/app/${id}` });
+      await wait(15000);   // 開いて、答えが読みこまれ、5秒変わらないのを確かめて送るまで
+    }
+    await chrome.storage.local.set({ lastSweep: { at: new Date().toLocaleString('ja-JP'), n: ids.length } });
+  } catch (e) {
+    await chrome.storage.local.set({ lastSweep: { at: new Date().toLocaleString('ja-JP'), n: 0, err: String(e.message || e) } });
+  } finally {
+    if (sweeping && sweeping.tab) chrome.tabs.remove(sweeping.tab).catch(() => {});
+    sweeping = null;
+  }
+}

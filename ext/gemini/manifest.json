@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "knowkin for Gemini",
-  "version": "1.0.0",
-  "description": "Geminiとの会話を、押さなくても knowkin の AI履歴に残す",
+  "version": "1.1.0",
+  "description": "Geminiとの会話を（スマホの会話も）、押さなくても knowkin の AI履歴に残す",
   "permissions": ["storage", "alarms"],
   "host_permissions": ["https://gemini.google.com/*", "https://knowkin-production.up.railway.app/*"],
   "background": { "service_worker": "background.js" },
