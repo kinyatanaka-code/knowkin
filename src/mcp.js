@@ -4,6 +4,8 @@ import { pool } from './db.js';
 import { addQuiz, getGrowth, openQuiz, quizMaterial, quizNeeded, rateQuiz } from './growth.js';
 import { getBriefing } from './briefing.js';
 import { companyDetail, companyKey, findTranscripts, kinbotConfig, listCompanies, searchBiz } from './kinbot-sync.js';
+import { buildMeetingDocs, buildProposalLibrary, buildReport } from './report-export.js';
+import { skillMain, skillRuleParts } from './skill-export.js';
 import { callUpstream, zodShape } from './upstream.js';
 import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, renameMilestone, setGoalNote, updateGoal, addMilestones } from './goals.js';
 import {
@@ -82,6 +84,10 @@ const SERVER_INSTRUCTIONS = `knowkin は田中欽也の「第二の脳」です�
 - 本人が発言するたびに、返事を書いたあとで add_memo を呼び、本人の発言をそのまま text に入れて残す（source は省略。短い相づちは残さなくてよい）。これが本人とあなたの会話の記録（AI履歴）になる
 - 本人の考え方は get_core、過去の記録は search_memory、顧客企業のことは get_company で調べてから答える
 - 架電・アポ・稼働は kincall_ で始まる道具、商談・案件・Salesforce は kinbot_ で始まる道具、DOCの導入企業・候補者の質問は kinxs_ で始まる道具で、その場の数字を調べられる
+- 商談・アポ・架電の数や率・人ごとの比較は get_sales_report（knowkin が全件を数えた結果。自分で数え直さない）
+- 特定の会社の打ち合わせ（お礼メール・商談準備）は get_meeting_notes、お客様の実際の言葉は get_transcript
+- 提案資料は get_proposal_library（これまでの資料から数えたベース）と get_meeting_notes を材料に作る
+- 分析・提案資料・お礼メールを作る前に get_writing_rules で決まりと完成例を読み、その形で書く
 - 記録にないことを事実のように言わない。1回に聞くのは1つだけ。返事は短く`;
 
 export function buildMcpServer(uid, { ai = '', upstream = [] } = {}) {
@@ -166,6 +172,56 @@ export function buildMcpServer(uid, { ai = '', upstream = [] } = {}) {
       ...recs.map((r) => `## ${r.at_jst} [${r.kind}] ${r.title}${r.people?.length ? `（${r.people.join('、')}）` : ''}\n${r.body}`),
       mem.length ? `\n## 企業についての記憶\n${mem.map(unitLine).join('\n')}` : '',
       others.length ? `\n（ほかに名前が近い企業：${others.join('、')}）` : ''].filter(Boolean).join('\n'));
+  });
+
+  // ---- Gemini のスキル（ドライブのドキュメント）と同じものを、コネクタからも読めるようにする（2026-11-22 田中さん「gemini のコネクタでも同じことができるように」）----
+  const cap = ai && ai !== 'claude' ? 20000 : 300000;
+  const capText = (t, hint) => (t.length > cap ? t.slice(0, cap) + `\n\n（長いので ${cap.toLocaleString()} 字で切りました。${hint}）` : t);
+  const pickSection = (t, sec) => {
+    if (!sec) return t;
+    const parts = t.split(/\n(?=## )/);
+    const hit = parts.filter((p) => p.startsWith(`## ${sec}.`));
+    return hit.length ? hit.join('\n') : `「${sec}」の見出しが見つかりませんでした。見出し：\n${parts.filter((p) => p.startsWith('## ')).map((p) => p.split('\n')[0]).join('\n')}`;
+  };
+  server.registerTool('get_sales_report', {
+    title: '商談・アポ・架電の分析レポート',
+    description: 'knowkin が kinbot・kincall の全件を数えた分析レポート。1 人ごとのまとめ（今月）、2 同（先月）、3 週ごとの初回商談、4 人ごとの今月の案件と判定の理由、5 過去12か月の人×月、6 アポ（今月・先月）、7 架電と稼働（今月・先月・1時間あたり）。件数・率はここの数字をそのまま使う。section に番号を入れるとその節だけ返す（長いときは節ごとに読む）。',
+    inputSchema: { section: z.string().optional().describe('節の番号（1〜7）。省略で全部') },
+    annotations: { readOnlyHint: true },
+  }, async ({ section }) => {
+    try { return text(capText(pickSection(await buildReport(uid), section ? String(section).trim() : ''), 'section に節の番号を入れて読んでください')); }
+    catch (e) { return { ...text(`レポートを作れませんでした：${e.message}`), isError: true }; }
+  });
+  server.registerTool('get_meeting_notes', {
+    title: '商談の議事録（会社ごと）',
+    description: '会社名か題名の一部で、直近90日の商談の議事録（概要・決まったこと・やること・懸念・予算・時期・決める人・次の一手・Salesforce の URL）を新しい順に返す。お礼メール・商談準備・提案資料の材料。お客様の実際の言葉が要るときは get_transcript。',
+    inputSchema: { query: z.string().describe('会社名か題名の一部'), limit: z.number().optional().describe('何件まで（既定3）') },
+    annotations: { readOnlyHint: true },
+  }, async ({ query, limit }) => {
+    try {
+      const list = (await buildMeetingDocs(uid, 90, String(query || '').trim())).slice(0, Math.max(1, Math.min(10, Number(limit) || 3)));
+      if (!list.length) return text(`「${query}」の議事録は見つかりませんでした（直近90日）。`);
+      return text(capText(list.map((m) => m.text).join('\n\n---\n\n'), 'limit を小さくしてください'));
+    } catch (e) { return { ...text(`議事録を読めませんでした：${e.message}`), isError: true }; }
+  });
+  server.registerTool('get_proposal_library', {
+    title: '提案資料ライブラリ',
+    description: 'これまでお客様に送った提案資料（PDF）と登録した Google スライドから数えた、1 ベース（よく使われるページの流れ・変えないページ／会社ごとに変えるページ）、2 よく読まれるページ、3 送った資料のページごとの本文と見られた秒数、4 登録した Google スライド（業界・規模・結果つき）。提案資料を作るときの土台。section に番号を入れるとその節だけ。',
+    inputSchema: { section: z.string().optional().describe('節の番号（1〜4）。省略で全部') },
+    annotations: { readOnlyHint: true },
+  }, async ({ section }) => {
+    try { return text(capText(pickSection(await buildProposalLibrary(uid), section ? String(section).trim() : ''), 'section に節の番号を入れて読んでください')); }
+    catch (e) { return { ...text(`ライブラリを作れませんでした：${e.message}`), isError: true }; }
+  });
+  server.registerTool('get_writing_rules', {
+    title: '書き方の決まり（分析・提案資料・お礼メール）',
+    description: '分析・提案資料・お礼メールを作る前に読む決まりと完成例。topic：「全体」（どの道具を使うかの案内と、書きかえの依頼の作り方）、「分析」（進め方と完成例）、「提案資料」（作り方）、「お礼メール」（決まり・型・件名や署名・完成例）。',
+    inputSchema: { topic: z.enum(['全体', '分析', '提案資料', 'お礼メール']).describe('どの決まりを読むか') },
+    annotations: { readOnlyHint: true },
+  }, async ({ topic }) => {
+    if (topic === '全体') return text(capText('（コネクタで使うときの読みかえ：「kinbot 分析レポート」＝get_sales_report、「議事録 〇〇」＝get_meeting_notes、「文字起こし 〇〇」＝get_transcript、「kinbot 提案資料ライブラリ」＝get_proposal_library、「1 書き方の決まり」＝get_writing_rules、「knowkin 考え方の核」＝get_core、「最近の記録」＝search_memory）\n\n' + await skillMain(), ''));
+    const parts = await skillRuleParts();
+    return text(capText(parts.filter((p) => p.title.startsWith(topic)).map((p) => p.text).join('\n\n') || '見つかりませんでした。', '残りは完成例です'));
   });
 
   server.registerTool('get_transcript', {

@@ -122,11 +122,11 @@ export async function buildReport(uid) {
 // 議事録を1件ずつの文章にして返す（Apps Script が1件1ドキュメントにしてドライブに置き、Gemini が会社名で探して読む）。
 // Gemini は大きなスプレッドシートから1件を探し出せず、お礼メールが議事録なしの一般的な文になっていたため（2026-11-22）
 const lines = (v) => (Array.isArray(v) ? v.map((x) => `・${typeof x === 'object' ? JSON.stringify(x) : x}`).join('\n') : v ? String(v) : '');
-export async function buildMeetingDocs(uid, days = 60) {
+export async function buildMeetingDocs(uid, days = 60, q = '') {
   const owner = await firstUser();
   if (!kinbotConfig().ready || !owner || owner.id !== uid) throw new Error('連携先（kinbot）が設定されていません');
   const from = ymd(jst(-days));
-  const list = await rows('kinbot', 'list_meetings', { from });
+  const list = await rows('kinbot', 'list_meetings', q ? { from, q } : { from });
   // 文字起こし全文（knowkin に取り込み済みのもの）も、議事録のあとに付ける（お客様の実際の言葉を Gemini も読めるように）
   const ids = list.map((m) => m.bot_id).filter(Boolean);
   const tr = new Map((await pool.query('SELECT bot_id, text FROM biz_transcripts WHERE user_id = $1 AND bot_id = ANY($2)', [uid, ids]).catch(() => ({ rows: [] }))).rows.map((r) => [r.bot_id, r.text]));
