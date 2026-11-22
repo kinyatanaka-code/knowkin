@@ -128,7 +128,9 @@ export const CLASSIFY_RULES = `## 種類（type）
 - 迷ったら self。task と goal は常に self
 - 同じメモから、本人の学び（self）と顧客の情報（company）が両方出ることがある。そのときは別のユニットに分ける`;
 
-export const CORE_RULES = `- 繰り返されているもの（count が大きいもの）、重要度が高いものを優先する
+export const CORE_RULES = `- summary と values は「その時の担当業務のやり方」ではなく、仕事が変わっても変わらない、この人という人の軸を書く（例：何に燃えるか、どう価値を生むか、何を大事にするか）。type が value の記憶と、本人が自分の役割や生き方について語った記憶を最優先にする
+- 特定の業務（インサイドの運営・インターン育成など）の具体的なやり方は、decision_rules と lessons に入れてよいが、そこばかりにしない。仕事・開発・プライベートなど、いくつかの分野から拾う
+- 繰り返されているもの（count が大きいもの）、重要度が高いものを優先する
 - 記憶に書かれていないことは推測で付け足さない
 - 人物ごとに、その人が大事にしていること・よく言うことをまとめる
 - 各項目は短く具体的な1文にする。各リストは最大7項目`;
@@ -490,14 +492,33 @@ async function applyUnits(memo, list) {
 }
 
 /** 核を作るための材料 */
+// 核の材料（2026-11-22 田中さん「この核って微妙じゃない？」）：
+//   前は count 順に300件だったので、その時期にたくさん記録した仕事（10〜11月のインサイド・インターン育成）で埋まり、
+//   「その時の担当業務のやり方」の説明になっていた。いまは
+//   ① 価値観（value）と目的（goal）は全部、② 同じ引き出し（テーマ）からは最大40件、③ 種類ごとにも上限、
+//   にして、長く続く本人の軸が材料に入るようにする
 export async function getCoreMaterial(uid) {
   const { rows } = await pool.query(
-    `SELECT type, content, quote, reason, people, count, importance FROM units
-     WHERE user_id = $2 AND relevance = 'direct' AND realm = 'self' AND (type = ANY($1) OR type NOT IN ('event', 'input', 'task'))
-       AND type NOT IN ('event', 'input', 'task') ORDER BY count DESC, importance DESC, created_at DESC LIMIT 300`,
-    [['lesson', 'value', 'decision', 'person', 'goal', 'question', 'idea'], uid],
-  );
-  return rows;
+    `SELECT type, content, quote, reason, people, count, importance, genre FROM units
+     WHERE user_id = $1 AND relevance = 'direct' AND realm = 'self' AND type NOT IN ('event', 'input', 'task')
+     ORDER BY count DESC, importance DESC, created_at DESC LIMIT 3000`, [uid]);
+  const cap = { value: 1000, goal: 1000, lesson: 80, decision: 70, person: 40, question: 30, idea: 40 };
+  const perType = {}, perGenre = {};
+  const out = [];
+  for (const r of rows) {
+    const keep = r.type === 'value' || r.type === 'goal';
+    const t = cap[r.type] ?? 30;
+    if (!keep) {
+      if ((perType[r.type] || 0) >= t) continue;
+      const g = r.genre || '（なし）';
+      if ((perGenre[g] || 0) >= 40) continue;
+      perGenre[g] = (perGenre[g] || 0) + 1;
+    }
+    perType[r.type] = (perType[r.type] || 0) + 1;
+    out.push(r);
+    if (out.length >= 320) break;
+  }
+  return out;
 }
 
 export async function saveCore(uid, r) {
