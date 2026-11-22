@@ -375,6 +375,16 @@ export function buildMcpServer(uid, { ai = '', upstream = [] } = {}) {
       await pool.query('INSERT INTO tool_icons(user_id, tool, data) VALUES($1,$2,$3) ON CONFLICT (user_id, tool) DO UPDATE SET data = EXCLUDED.data', [uid, ti[1], ti[2]]);
       return text(`${ti[1]} のアイコンを差し替えました。`);
     }
+    // 作ったもの（save_work が見えない古い道具の一覧の AI のため、add_memo でも受け付ける）。記憶ではなく「作ったもの」に入れる
+    //   1行目：knowkin-work:{"title":…,"kind":…,"company":…,"format":…,"url":…,"notes":…,"ref":…}　2行目から：全文
+    const wk = /^knowkin-work:(\{.*\})\r?\n([\s\S]+)$/.exec(String(t));
+    if (wk) {
+      try {
+        const { saveWork } = await import('./works.js');
+        const r = await saveWork(uid, { ...JSON.parse(wk[1]), content: wk[2], ai: ai || 'claude' });
+        return text(`作ったものとして${r.unchanged ? '（前と同じなので変えずに）' : r.updated ? `続きを保存しました（版${r.version}）` : '保存しました'}。ref：${r.ref}`);
+      } catch (e) { return { ...text(`作ったものを保存できませんでした：${e.message}`), isError: true }; }
+    }
     // 業務ツールやポータルからの取り込みでなければ、AIとの会話（AI履歴）として、つないでいるAIの名前で残す
     const src = source && (BIZ_SOURCES.includes(source) || source === 'portal') ? source : (ai || source || 'claude');
     const r = await addMemo(uid, t, src, units || null, ref || null);
