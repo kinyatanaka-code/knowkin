@@ -13,6 +13,7 @@ import { buildExportTables } from './sheet-export.js';
 import { buildMeetingDocs, buildProposalLibrary, buildReport, buildSfOpenDeals } from './report-export.js';
 import { skillMain, skillRules } from './skill-export.js';
 import { ORGANIZE_MARK, organizeApply, organizeBatch } from './organize.js';
+import { CHAT_TOOLS, applyCalls, applyJob, jobPrompt, nextJob, nowDoc, takeJobRequest } from './gemini-jobs.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
@@ -166,6 +167,12 @@ api.post('/memos', express.text({ type: 'text/*', limit: '5mb' }), wrap(async (r
     const ref = body.ref ? `ai:${String(body.ref).slice(0, 150)}` : null;
     const r = await addMemo(req.uid, head ? `【${AI_SOURCES[body.source]}との会話：${head}】\n${text}` : text, body.source, null, ref);
     if (head && r.memo_id) await pool.query('UPDATE memos SET title = $1 WHERE id = $2 AND user_id = $3', [head, r.memo_id, req.uid]);
+    // Gemini のチャットで本人に頼まれた書きかえ（タスク・目的・手入れの依頼）が答えに入っていれば、決めた道具だけ動かす。
+    //   同じやりとりは ref で二度入らないので、二度動くこともない（2026-11-22 田中さん「タスク・目的も Gemini で」）
+    if (!r.duplicate && body.source === 'gemini' && text.includes('knowkin_calls')) {
+      try { r.calls = await applyCalls(req.uid, text, CHAT_TOOLS); console.log(`[gemini] チャットの書きかえ：${r.calls.map((c) => `${c.tool}${c.ok ? '' : '（失敗）'}`).join('・')}`); }
+      catch (e) { r.calls_error = e.message; }
+    }
     return res.json(r);
   }
   const source = body.source === 'voice' ? 'voice' : 'text';
@@ -238,6 +245,28 @@ api.get('/export/text', wrap(async (req, res) => res.type('text/plain; charset=u
 api.get('/export/skill', wrap(async (req, res) => {
   res.type('text/plain; charset=utf-8').send(req.query.part === 'rules' ? await skillRules() : await skillMain());
 }));
+// Gemini に手入れ（整理・仕分け・置き場所・引き出し・目的のタスク・再現度テスト・核）をさせる。拡張機能が1時間ごと（と、頼まれたとき）に回す
+api.get('/gemini-jobs/next', wrap(async (req, res) => {
+  const skip = String(req.query.skip || '').split(',').filter(Boolean);
+  for (let i = 0; i < 8; i++) {
+    const job = await nextJob(req.uid, skip);
+    if (!job) return res.json({ job: null });
+    const prompt = await jobPrompt(req.uid, job).catch((e) => { console.error('[gemini-jobs]', job, e.message); return null; });
+    if (prompt) return res.json({ job, prompt });
+    skip.push(job);
+  }
+  res.json({ job: null });
+}));
+api.post('/gemini-jobs/apply', wrap(async (req, res) => {
+  try {
+    const b = req.body || {};
+    const results = await applyJob(req.uid, String(b.job || ''), b.answer);
+    console.log(`[gemini-jobs] ${b.job}：${results.filter((r) => r.ok).length}/${results.length} 件の道具を動かしました`);
+    res.json({ ok: true, results });
+  } catch (e) { res.status(400).json({ error: e.message }); }
+}));
+api.get('/export/now', wrap(async (req, res) => res.type('text/plain; charset=utf-8').send(await nowDoc(req.uid))));
+api.get('/gemini-jobs/requested', wrap(async (req, res) => res.json({ requested: await takeJobRequest(req.uid) })));
 // Gemini に整理させる（拡張機能「knowkin for Gemini」が1時間ごとに、頼みごとをもらって Gemini に貼り、答えの JSON を返す）
 api.get('/organize/batch', wrap(async (req, res) => res.json(await organizeBatch(req.uid))));
 api.post('/organize/apply', wrap(async (req, res) => {
