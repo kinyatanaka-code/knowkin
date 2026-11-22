@@ -15,7 +15,7 @@ import {
 
 const text = (t) => ({ content: [{ type: 'text', text: t }] });
 const typeField = z.string().min(1).max(31);
-const unitSchema = z.object({
+export const unitSchema = z.object({
   type: typeField.describe('既存の種類（event など）か、create_category で作ったカテゴリの key'),
   content: z.string().min(1),
   quote: z.string().optional(),
@@ -40,7 +40,7 @@ const NEW_CATEGORY_RULE = `## 新しいカテゴリ
 - 無理に event に押し込まない。ただし、既存の種類で表せるものに新しいカテゴリは作らない（似たカテゴリを増やさない）
 - 新しいカテゴリは、なるべく既存の5つの層（event=出来事 / know=知識 / think=思考 / act=行動 / rel=関係）のどれかに入れる。どの層にも入らないときだけ layer を new にして新しい層を作る`;
 
-async function categoriesPart(uid) {
+export async function categoriesPart(uid) {
   const cats = await getCategories(uid);
   const list = cats.length
     ? cats.map((c) => `- ${c.key}: ${c.label}（層：${c.layer === 'new' ? c.layer_label + '（新しい層）' : c.layer}）${c.description ? ' … ' + c.description : ''}`).join('\n')

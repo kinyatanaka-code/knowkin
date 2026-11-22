@@ -12,6 +12,7 @@ import { buildExportFiles, buildExportText, exportConfig, exportToGitHub } from 
 import { buildExportTables } from './sheet-export.js';
 import { buildMeetingDocs, buildProposalLibrary, buildReport, buildSfOpenDeals } from './report-export.js';
 import { skillMain, skillRules } from './skill-export.js';
+import { ORGANIZE_MARK, organizeApply, organizeBatch } from './organize.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
@@ -133,6 +134,8 @@ api.post('/memos', express.text({ type: 'text/*', limit: '5mb' }), wrap(async (r
   const body = typeof req.body === 'string' ? { text: req.body, source: 'voicememo' } : (req.body || {});
   const text = String(body.text || '').trim();
   if (!text) return res.status(400).json({ error: '内容が空です' });
+  // Gemini に整理させたやりとり（頼みごと・答えの JSON）は、AI履歴に残さない（同じ記録が二重に入るため）
+  if (text.includes(ORGANIZE_MARK)) return res.json({ ok: true, skipped: 'organize' });
   if (body.source === 'voicememo') {
     // iPhoneのボイスメモの文字起こし。ref があればそれで、なければ本文から、同じ録音を二度入れない
     const base = body.ref ? 'voicememo:' + String(body.ref).slice(0, 120)
@@ -234,6 +237,16 @@ api.get('/export/text', wrap(async (req, res) => res.type('text/plain; charset=u
 // Gemini のスキルの中身（gemini-skill/ から。Apps Script がドキュメントに書き、スキルが読む）
 api.get('/export/skill', wrap(async (req, res) => {
   res.type('text/plain; charset=utf-8').send(req.query.part === 'rules' ? await skillRules() : await skillMain());
+}));
+// Gemini に整理させる（拡張機能「knowkin for Gemini」が1時間ごとに、頼みごとをもらって Gemini に貼り、答えの JSON を返す）
+api.get('/organize/batch', wrap(async (req, res) => res.json(await organizeBatch(req.uid))));
+api.post('/organize/apply', wrap(async (req, res) => {
+  try {
+    const b = req.body || {};
+    const r = await organizeApply(req.uid, b.answer, Array.isArray(b.batch) ? b.batch : []);
+    console.log(`[organize] Gemini の整理：${r.saved}件のメモ・${r.added}件の記憶（飛ばした ${r.skipped}・形が違う ${r.bad}）`);
+    res.json({ ok: true, ...r });
+  } catch (e) { res.status(400).json({ error: e.message }); }
 }));
 // Salesforce の進行中の商談（チームの、まだ閉じていない商談）
 api.get('/export/sf-open', wrap(async (req, res) => {
