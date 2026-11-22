@@ -213,3 +213,42 @@ async function callUpstreamJson(tool, args) {
   const t = (r.content || []).map((c) => c.text || '').join('\n');
   try { return JSON.parse(t); } catch { return null; }
 }
+
+// ---- Salesforce の進行中の商談（2026-11-22 田中さん「Gemini のスキルで SF の記録を読めるように」）----
+//   チーム（この1年に kinbot で商談した人）が持っている、まだ閉じていない（IsClosed = false）商談を、人ごと・段階ごとに並べる。
+//   完了予定日が過ぎているものに印を付ける（SF の更新漏れを見つけて、/gem の書きかえ依頼につなげるため）
+export async function buildSfOpenDeals(uid) {
+  const owner = await firstUser();
+  if (!kinbotConfig().ready || !owner || owner.id !== uid) throw new Error('連携先（kinbot）が設定されていません');
+  const deals = await rows('kinbot', 'list_deals', { from: monthsBack(11), to: ymd(jst()) });
+  const emails = [...new Set(deals.map((d) => String(d.owner || '').toLowerCase()).filter((e) => /^[a-z0-9._-]+@neo-career\.co\.jp$/.test(e)))];
+  if (!emails.length) return '# Salesforce 進行中の商談\n\nチームの人が見つかりませんでした。';
+  const { callUpstream } = await import('./upstream.js');
+  const soql = `SELECT Id, StageName, CloseDate, Account.Name, Owner.Name, Owner.Email, LastModifiedDate, CreatedDate FROM Opportunity WHERE IsClosed = false AND Owner.Email IN (${emails.map((e) => `'${e}'`).join(',')}) ORDER BY Owner.Name, StageName, CloseDate LIMIT 2000`;
+  const r = await callUpstream('kinbot', 'sf_query', { soql }, 50_000_000);
+  const t = (r.content || []).map((c) => c.text || '').join('\n');
+  let recs = [];
+  try { recs = JSON.parse(t).records || []; } catch { return `# Salesforce 進行中の商談\n\n読めませんでした：${t.slice(0, 200)}`; }
+  const today = ymd(jst());
+  const by = new Map();
+  for (const o of recs) { const k = (o.Owner && o.Owner.Name) || '不明'; if (!by.has(k)) by.set(k, []); by.get(k).push(o); }
+  const now = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Asia/Tokyo', dateStyle: 'short', timeStyle: 'short' }).format(new Date());
+  const out = ['# Salesforce 進行中の商談（自動・編集しない）', '', `最終更新：${now}　まだ閉じていない商談 ${recs.length} 件（チーム ${by.size} 人）`, '',
+    'Salesforce の商談（Opportunity）のうち、まだ閉じていない（受注・失注になっていない）もの。人ごと・段階ごと。',
+    '「★期限切れ」＝完了予定日が今日より前。段階を進めるか失注にするか、SF の更新が要る可能性が高い。',
+    '書きかえるときは、行の最後の id（006…）を使って、書きかえの依頼（sf_update）を作る。', ''];
+  const sum = [];
+  for (const [name, list] of by) {
+    const st = new Map(); let late = 0;
+    for (const o of list) { st.set(o.StageName, (st.get(o.StageName) || 0) + 1); if (o.CloseDate && o.CloseDate < today) late++; }
+    sum.push([name, list.length, late, [...st.entries()].map(([k, v]) => `${k} ${v}`).join('・')]);
+  }
+  out.push('## 1. 人ごとの数', '', table(['人', '進行中', '★期限切れ', '段階ごと'], sum), '');
+  out.push('## 2. 一覧（人ごと・段階ごと）', '', '形：段階｜会社｜完了予定日｜最終更新日｜id', '');
+  for (const [name, list] of by) {
+    out.push(`### ${name}（${list.length}件）`);
+    for (const o of list) out.push(`- ${o.StageName}｜${cut((o.Account && o.Account.Name) || '', 26)}｜${o.CloseDate || ''}${o.CloseDate && o.CloseDate < today ? ' ★期限切れ' : ''}｜${String(o.LastModifiedDate || '').slice(0, 10)}｜${o.Id}`);
+    out.push('');
+  }
+  return out.join('\n');
+}

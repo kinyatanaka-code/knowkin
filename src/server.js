@@ -10,7 +10,7 @@ import { companyDetail, kinbotStatus, listCompanies, syncKinbot } from './kinbot
 import { upstreamTools } from './upstream.js';
 import { buildExportFiles, buildExportText, exportConfig, exportToGitHub } from './github-export.js';
 import { buildExportTables } from './sheet-export.js';
-import { buildMeetingDocs, buildProposalLibrary, buildReport } from './report-export.js';
+import { buildMeetingDocs, buildProposalLibrary, buildReport, buildSfOpenDeals } from './report-export.js';
 import { skillMain, skillRules } from './skill-export.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
@@ -234,6 +234,10 @@ api.get('/export/text', wrap(async (req, res) => res.type('text/plain; charset=u
 // Gemini のスキルの中身（gemini-skill/ から。Apps Script がドキュメントに書き、スキルが読む）
 api.get('/export/skill', wrap(async (req, res) => {
   res.type('text/plain; charset=utf-8').send(req.query.part === 'rules' ? await skillRules() : await skillMain());
+}));
+// Salesforce の進行中の商談（チームの、まだ閉じていない商談）
+api.get('/export/sf-open', wrap(async (req, res) => {
+  try { res.type('text/plain; charset=utf-8').send(await buildSfOpenDeals(req.uid)); } catch (e) { res.status(400).json({ error: e.message }); }
 }));
 // 提案資料ライブラリ（送った提案資料からベースを数えて作る）
 api.get('/export/proposals', wrap(async (req, res) => {

@@ -4,7 +4,7 @@ import { pool } from './db.js';
 import { addQuiz, getGrowth, openQuiz, quizMaterial, quizNeeded, rateQuiz } from './growth.js';
 import { getBriefing } from './briefing.js';
 import { companyDetail, companyKey, findTranscripts, kinbotConfig, listCompanies, searchBiz } from './kinbot-sync.js';
-import { buildMeetingDocs, buildProposalLibrary, buildReport } from './report-export.js';
+import { buildMeetingDocs, buildProposalLibrary, buildReport, buildSfOpenDeals } from './report-export.js';
 import { skillMain, skillRuleParts } from './skill-export.js';
 import { callUpstream, zodShape } from './upstream.js';
 import { addGoalTasks, getGoals, goalContext, goalsText, linkUnits, pendingTaskRequests, proposeGoal, renameMilestone, setGoalNote, updateGoal, addMilestones } from './goals.js';
@@ -87,6 +87,7 @@ const SERVER_INSTRUCTIONS = `knowkin は田中欽也の「第二の脳」です�
 - 商談・アポ・架電の数や率・人ごとの比較は get_sales_report（knowkin が全件を数えた結果。自分で数え直さない）
 - 特定の会社の打ち合わせ（お礼メール・商談準備）は get_meeting_notes、お客様の実際の言葉は get_transcript
 - 提案資料は get_proposal_library（これまでの資料から数えたベース）と get_meeting_notes を材料に作る
+- Salesforce の更新漏れ探し・まだ閉じていない商談の一覧は get_sf_open_deals
 - 分析・提案資料・お礼メールを作る前に get_writing_rules で決まりと完成例を読み、その形で書く
 - 記録にないことを事実のように言わない。1回に聞くのは1つだけ。返事は短く`;
 
@@ -213,13 +214,25 @@ export function buildMcpServer(uid, { ai = '', upstream = [] } = {}) {
     try { return text(capText(pickSection(await buildProposalLibrary(uid), section ? String(section).trim() : ''), 'section に節の番号を入れて読んでください')); }
     catch (e) { return { ...text(`ライブラリを作れませんでした：${e.message}`), isError: true }; }
   });
+  server.registerTool('get_sf_open_deals', {
+    title: 'Salesforce の進行中の商談',
+    description: 'チームが持っている、まだ閉じていない Salesforce の商談を、人ごと・段階ごとに返す（会社・完了予定日・最終更新日・id）。完了予定日が過ぎたものに「★期限切れ」。SF の更新漏れ探しと、書きかえの依頼（sf_update の id）に使う。who に名前の一部を入れるとその人だけ。',
+    inputSchema: { who: z.string().optional().describe('人の名前の一部（例：田中）') },
+    annotations: { readOnlyHint: true },
+  }, async ({ who }) => {
+    try {
+      let t = await buildSfOpenDeals(uid);
+      if (who) { const parts = t.split(/\n(?=### )/); t = [parts[0], ...parts.slice(1).filter((p) => p.split('\n')[0].includes(String(who).trim()))].join('\n'); }
+      return text(capText(t, 'who に人の名前を入れて読んでください'));
+    } catch (e) { return { ...text(`SF を読めませんでした：${e.message}`), isError: true }; }
+  });
   server.registerTool('get_writing_rules', {
     title: '書き方の決まり（分析・提案資料・お礼メール）',
     description: '分析・提案資料・お礼メールを作る前に読む決まりと完成例。topic：「全体」（どの道具を使うかの案内と、書きかえの依頼の作り方）、「分析」（進め方と完成例）、「提案資料」（作り方）、「お礼メール」（決まり・型・件名や署名・完成例）。',
     inputSchema: { topic: z.enum(['全体', '分析', '提案資料', 'お礼メール']).describe('どの決まりを読むか') },
     annotations: { readOnlyHint: true },
   }, async ({ topic }) => {
-    if (topic === '全体') return text(capText('（コネクタで使うときの読みかえ：「kinbot 分析レポート」＝get_sales_report、「議事録 〇〇」＝get_meeting_notes、「文字起こし 〇〇」＝get_transcript、「kinbot 提案資料ライブラリ」＝get_proposal_library、「1 書き方の決まり」＝get_writing_rules、「knowkin 考え方の核」＝get_core、「最近の記録」＝search_memory）\n\n' + await skillMain(), ''));
+    if (topic === '全体') return text(capText('（コネクタで使うときの読みかえ：「kinbot 分析レポート」＝get_sales_report、「議事録 〇〇」＝get_meeting_notes、「文字起こし 〇〇」＝get_transcript、「kinbot 提案資料ライブラリ」＝get_proposal_library、「1 書き方の決まり」＝get_writing_rules、「knowkin 考え方の核」＝get_core、「最近の記録」＝search_memory、「Salesforce 進行中の商談」＝get_sf_open_deals）\n\n' + await skillMain(), ''));
     const parts = await skillRuleParts();
     return text(capText(parts.filter((p) => p.title.startsWith(topic)).map((p) => p.text).join('\n\n') || '見つかりませんでした。', '残りは完成例です'));
   });
