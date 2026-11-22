@@ -258,7 +258,12 @@ api.get('/export/proposals', wrap(async (req, res) => {
 }));
 // 議事録を1件ずつ（Apps Script が1件1ドキュメントにして、Gemini が会社名で探して読めるようにする）
 api.get('/export/meetings', wrap(async (req, res) => {
-  try { res.json({ meetings: await buildMeetingDocs(req.uid, Math.min(180, Number(req.query.days) || 60)) }); } catch (e) { res.status(400).json({ error: e.message }); }
+  try {
+    const ids = String(req.query.ids || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 40);
+    const days = Math.min(180, Number(req.query.days) || 60);
+    // ids なし＝一覧（名前と更新の印だけ）、ids あり＝その商談だけ本文つき。全部の本文を一度に返すと重すぎるため
+    res.json({ meetings: await buildMeetingDocs(req.uid, days, '', ids.length ? { ids } : { listOnly: true }) });
+  } catch (e) { res.status(400).json({ error: e.message }); }
 }));
 // 先に数えておいた分析レポート（Gemini が件数・率を数え間違えないように）
 api.get('/export/report', wrap(async (req, res) => {

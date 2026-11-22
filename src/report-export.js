@@ -122,13 +122,20 @@ export async function buildReport(uid) {
 // 議事録を1件ずつの文章にして返す（Apps Script が1件1ドキュメントにしてドライブに置き、Gemini が会社名で探して読む）。
 // Gemini は大きなスプレッドシートから1件を探し出せず、お礼メールが議事録なしの一般的な文になっていたため（2026-11-22）
 const lines = (v) => (Array.isArray(v) ? v.map((x) => `・${typeof x === 'object' ? JSON.stringify(x) : x}`).join('\n') : v ? String(v) : '');
-export async function buildMeetingDocs(uid, days = 60, q = '') {
+// opts.listOnly：名前と更新の印だけ（Apps Script が、変わったものだけ選ぶため）。opts.ids：その商談だけ本文つきで。
+//   前は60日分の文字起こし全部（数十MB）を一度に返していて、knowkin が応答できなくなっていた（2026-11-22 502）
+export async function buildMeetingDocs(uid, days = 60, q = '', opts = {}) {
   const owner = await firstUser();
   if (!kinbotConfig().ready || !owner || owner.id !== uid) throw new Error('連携先（kinbot）が設定されていません');
   const from = ymd(jst(-days));
-  const list = await rows('kinbot', 'list_meetings', q ? { from, q } : { from });
-  // 文字起こし全文（knowkin に取り込み済みのもの）も、議事録のあとに付ける（お客様の実際の言葉を Gemini も読めるように）
+  let list = await rows('kinbot', 'list_meetings', q ? { from, q } : { from });
+  if (opts.ids && opts.ids.length) { const want = new Set(opts.ids); list = list.filter((m) => want.has(m.bot_id)); }
   const ids = list.map((m) => m.bot_id).filter(Boolean);
+  if (opts.listOnly) {
+    const len = new Map((await pool.query('SELECT bot_id, length(text) AS n FROM biz_transcripts WHERE user_id = $1 AND bot_id = ANY($2)', [uid, ids]).catch(() => ({ rows: [] }))).rows.map((r) => [r.bot_id, Number(r.n)]));
+    return list.filter((m) => m.bot_id && m.summary).map((m) => ({ id: m.bot_id, title: m.title, date: ymd(new Date(new Date(m.created_at).getTime() + 9 * 3600000)), updated: `${m.updated_at || m.created_at}#${len.get(m.bot_id) || 0}` }));
+  }
+  // 文字起こし全文（knowkin に取り込み済みのもの）も、別のドキュメント用に付ける（お客様の実際の言葉を Gemini も読めるように）
   const tr = new Map((await pool.query('SELECT bot_id, text FROM biz_transcripts WHERE user_id = $1 AND bot_id = ANY($2)', [uid, ids]).catch(() => ({ rows: [] }))).rows.map((r) => [r.bot_id, r.text]));
   return list.filter((m) => m.bot_id && m.summary).map((m) => {
     const s = m.summary || {}, a = m.analysis || {}, b = a.bant || {};
