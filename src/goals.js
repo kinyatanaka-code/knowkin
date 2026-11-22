@@ -18,7 +18,7 @@ function progressOf(g, ms, tasks) {
 
 export async function getGoals(uid, { includeClosed = false } = {}) {
   const { rows: goals } = await pool.query(
-    `SELECT g.id, g.user_id, g.title, g.area, g.future, g.why, g.criteria, to_char(g.due, 'YYYY-MM-DD') AS due, g.status, g.pinned,
+    `SELECT g.id, g.user_id, g.title, g.area, g.future, g.why, g.criteria, to_char(g.due, 'YYYY-MM-DD') AS due, g.status, g.pinned, g.hidden,
        g.note, g.note_at, g.source_memo_id, g.last_activity_at, g.created_at, g.task_request_at
      FROM goals g WHERE g.user_id = $1 ${includeClosed ? '' : "AND g.status IN ('candidate','active','paused')"}
      ORDER BY (g.status = 'candidate') DESC, g.pinned DESC, g.due ASC NULLS LAST, g.created_at`, [uid]);
@@ -75,8 +75,11 @@ export async function updateGoal(uid, id, f) {
   if (f.due !== undefined) add('due', date(f.due));
   if (['candidate', 'active', 'paused', 'done', 'dropped'].includes(f.status)) add('status', f.status);
   if (typeof f.pinned === 'boolean') add('pinned', f.pinned);
+  // 隠す・戻すだけのときは「動き」に数えない（隠しただけで「22日動きなし」が消えると、本当の進み具合がわからなくなるため）
+  const moved = sets.length > 0;
+  if (typeof f.hidden === 'boolean') add('hidden', f.hidden);
   if (!sets.length) return;
-  await pool.query(`UPDATE goals SET ${sets.join(', ')}, last_activity_at = now() WHERE id = $1`, p);
+  await pool.query(`UPDATE goals SET ${sets.join(', ')}${moved ? ', last_activity_at = now()' : ''} WHERE id = $1`, p);
 }
 
 export async function setMilestone(uid, goalId, msId, done) {

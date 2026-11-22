@@ -383,6 +383,14 @@ h4{font-size:15px;margin:22px 0 6px;color:var(--muted);font-weight:500}
 .tk-grow.life .tk-gbar i{background:var(--dusk)}
 .tk-gmeta{font-size:12px;color:var(--muted)}.tk-gmeta b{color:var(--ember);font-weight:700;margin-left:8px}
 .tk-gmore{flex:none;border:0;background:var(--bg2);color:var(--g);border-radius:999px;padding:5px 11px;font-size:12px}
+.tk-ghide{flex:none;display:grid;place-items:center;width:30px;height:30px;border:0;background:var(--bg2);color:var(--muted);border-radius:999px;padding:0}
+.tk-ghide:hover{color:var(--g)}
+.tk-ghide svg{width:16px;height:16px}
+.tk-ghidden{margin-top:10px;font-size:12px;color:var(--muted)}
+.tk-ghidden summary{cursor:pointer;padding:6px 0}
+.tk-ghidden li{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0;border-bottom:1px solid var(--line)}
+.tk-ghidden li span{color:var(--ink);opacity:.7}
+.tk-ghidden li button{flex:none;border:0;background:var(--bg2);color:var(--g);border-radius:999px;padding:4px 10px;font-size:12px}
 .tk-grow.sel{background:linear-gradient(90deg,var(--soft),transparent);margin:0 -16px;padding:0 16px}
 .tk-ghint{font-size:12px;color:var(--muted);margin:8px 0 0}
 @media (prefers-reduced-motion:reduce){.tk-bar i,.tk-check span{transition:none}}
@@ -625,7 +633,7 @@ async function load(){
 // ---- 目的 ----
 const goalsAll=()=>(state&&state.goals)||[];
 const goalCands=()=>goalsAll().filter(g=>g.status==='candidate');
-function mapGoals(){return goalsAll().filter(g=>g.status==='active').slice().sort((a,b)=>(b.pinned-a.pinned)||String(a.due||'9999').localeCompare(String(b.due||'9999'))||(b.progress-a.progress)).slice(0,3);}
+function mapGoals(){return goalsAll().filter(g=>g.status==='active'&&!g.hidden).slice().sort((a,b)=>(b.pinned-a.pinned)||String(a.due||'9999').localeCompare(String(b.due||'9999'))||(b.progress-a.progress)).slice(0,3);}
 const gcol=g=>GCOL[g.area]||GCOL.work;
 const areaLabel=a=>a==='life'?'プライベート':'仕事';
 function gpathHTML(g){
@@ -649,11 +657,12 @@ function candHTML(g){
     <div class="row-actions"><button data-gapprove="${g.id}">目的にする</button><button class="del${ui.armed==='gr'+g.id?' armed':''}" data-greject="${g.id}">${ui.armed==='gr'+g.id?'もう一度押すと見送ります':'見送る'}</button></div></div></li>`;
 }
 function renderGoals(p){
-  const c=goalCands();const act=goalsAll().filter(g=>g.status==='active');const paused=goalsAll().filter(g=>g.status==='paused');
+  const c=goalCands();const act=visGoals().filter(g=>g.status==='active');const paused=visGoals().filter(g=>g.status==='paused');const hid=hiddenGoals();
   let html=`<h2>目的</h2><p class="lead">仕事でもプライベートでも、成し遂げたいこと・叶えたい未来です。話したことや記録からClaudeが候補を出し、あなたが承認すると目的になります。</p>`;
   if(c.length)html+=`<h4>承認待ちの候補</h4><ul class="list">${c.map(candHTML).join('')}</ul>`;
   html+=act.length?`<h4>進行中</h4>${act.map(goalCardHTML).join('')}`:`<p class="empty">進行中の目的はまだありません。やりたいことや叶えたいことを記録に残すと、Claudeが整理のときに候補を出します。</p>`;
   if(paused.length)html+=`<h4>保留中</h4>${paused.map(goalCardHTML).join('')}`;
+  if(hid.length)html+=`<details class="done-box"><summary>非表示の目的 ${hid.length}件</summary><p class="hint" style="margin:6px 0">行動の画面と脳の星には出しません。消したわけではないので、Claudeの整理や目的の進み具合はそのまま続きます。</p>${hid.map(goalCardHTML).join('')}</details>`;
   p.innerHTML=html;
 }
 function renderGoal(p){
@@ -662,7 +671,7 @@ function renderGoal(p){
   const arm=k=>ui.armed===k;
   p.innerHTML=`<button class="back" type="button" data-view="goals">← 目的一覧</button>
   <div style="--gc:${gcol(g)}">
-    <span class="gbadge">${areaLabel(g.area)}</span>${g.status==='paused'?'<span class="newtag">保留中</span>':''}
+    <span class="gbadge">${areaLabel(g.area)}</span>${g.status==='paused'?'<span class="newtag">保留中</span>':''}${g.hidden?'<span class="newtag">非表示</span>':''}
     <h2 style="margin-top:8px">${esc(g.title)}</h2>
     <div class="future-box">
       ${g.future?`<p class="lbl" style="margin-top:0">叶えたい未来</p><p style="font-size:17px">${esc(g.future)}</p>`:''}
@@ -692,6 +701,7 @@ function renderGoal(p){
     ${others.length?`<h4>つながっている記憶</h4><ul class="list">${others.map(u=>unitHTML(u)).join('')}</ul>`:''}
     <div class="actions" style="justify-content:flex-start;margin-top:18px">
       <button class="ghost" data-gpin="${g.id}">${g.pinned?'ピン留めを外す':'ネットワークにピン留め'}</button>
+      <button class="ghost" data-ghide="${g.id}|${g.hidden?0:1}">${g.hidden?'表示に戻す':'非表示にする'}</button>
       <button class="ghost" data-gstatus="${g.id}|${g.status==='paused'?'active':'paused'}">${g.status==='paused'?'再開する':'保留にする'}</button>
       <button class="${g.progress>=100?'primary':'ghost'}${arm('gd'+g.id)?' on':''}" data-gdone="${g.id}">${arm('gd'+g.id)?'もう一度押すと達成にします':g.progress>=100?'達成にする':'達成した'}</button>
       <button class="ghost${arm('gx'+g.id)?' on':''}" data-gdrop="${g.id}">${arm('gx'+g.id)?'もう一度押すと手放します':'手放す'}</button>
@@ -1403,6 +1413,10 @@ function closeAct(fromPop){
   render();
 }
 window.addEventListener('popstate',()=>{if(ui.actOpen)closeAct(true);});
+// 目的を隠すアイコン（丸みのある目に斜線）。押す先がわかるよう、ふだんは控えめ・触れると緑にする
+const EYE_OFF='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12s3.5-6 9-6c1.6 0 3 .5 4.2 1.2M21 12s-3.5 6-9 6c-1.6 0-3-.5-4.2-1.2"/><circle cx="12" cy="12" r="2.6"/><path d="M4 20 20 4"/></svg>';
+const visGoals=()=>goalsAll().filter(g=>!g.hidden);
+const hiddenGoals=()=>goalsAll().filter(g=>g.hidden&&(g.status==='active'||g.status==='paused'));
 function actGoalRow(g){
   const sel=ui.tgoal===g.id;const open=g.tasks_total-g.tasks_done;
   return `<li class="tk-grow${sel?' sel':''}${g.area==='life'?' life':''}">
@@ -1412,18 +1426,20 @@ function actGoalRow(g){
       <span class="tk-gmeta">${g.progress}%${g.due?`・${esc(md(g.due))}まで`:''}${open>0?`・残りのタスク ${open}`:''}${g.stalled?`<b>${g.idle_days}日動きなし</b>`:''}</span>
     </button>
     <button type="button" class="tk-gmore" data-actgoal="${g.id}" aria-label="${esc(g.title)}を詳しく見る">詳しく</button>
+    <button type="button" class="tk-ghide" data-ghide="${g.id}|1" title="この目的を非表示にする" aria-label="${esc(g.title)}を非表示にする">${EYE_OFF}</button>
   </li>`;
 }
 function renderActView(){
   const v=$('actview');
-  const act=goalsAll().filter(g=>g.status==='active').slice().sort((a,b)=>(b.pinned-a.pinned)||String(a.due||'9999').localeCompare(String(b.due||'9999')));
-  const c=goalCands();
+  const act=visGoals().filter(g=>g.status==='active').slice().sort((a,b)=>(b.pinned-a.pinned)||String(a.due||'9999').localeCompare(String(b.due||'9999')));
+  const c=goalCands();const hid=hiddenGoals();
   v.innerHTML=`<header class="av-top"><button type="button" class="av-back" data-actclose aria-label="脳に戻る">‹</button><h1>行動</h1></header>
   <main class="av-body">
     <div id="av-tasks"></div>
     <section class="tk-goals"><div class="tk-gh"><h2>目的</h2><button type="button" class="linkbtn" data-actgoals>すべて見る</button></div>
       ${c.map(g=>`<div class="av-cand"><span aria-hidden="true">★</span><span><small>目的の候補</small><br><b>${esc(g.title)}</b></span><button type="button" data-gapprove="${g.id}">目的にする</button></div>`).join('')}
-      ${act.length?`<ul>${act.map(actGoalRow).join('')}</ul><p class="tk-ghint">目的を押すと、その目的のタスクだけになります。</p>`:`<p class="av-empty">進行中の目的はまだありません。やりたいことを記録すると、Claudeが候補を出します。</p>`}
+      ${act.length?`<ul>${act.map(actGoalRow).join('')}</ul><p class="tk-ghint">目的を押すと、その目的のタスクだけになります。</p>`:`<p class="av-empty">${hid.length?'表示している目的はありません。':'進行中の目的はまだありません。やりたいことを記録すると、Claudeが候補を出します。'}</p>`}
+      ${hid.length?`<details class="tk-ghidden"><summary>非表示の目的 ${hid.length}件</summary><ul>${hid.map(g=>`<li><span>${esc(g.title)}</span><button type="button" data-ghide="${g.id}|0">表示する</button></li>`).join('')}</ul></details>`:''}
     </section>
   </main>
   <nav class="av-tab" aria-label="画面の切り替え"><button type="button" data-acttab="brain"><span></span>脳</button><button type="button" class="on" aria-current="page"><span></span>行動</button><button type="button" data-acttab="rec"><span></span>記録</button><button type="button" data-acttab="review"><span></span>見直し</button></nav>`;
@@ -1864,6 +1880,9 @@ document.addEventListener('click',async e=>{
     if(t.dataset.greqtasks){await api(`/api/goals/${t.dataset.greqtasks}/request-tasks`,{method:'POST'});setStatus('依頼しました。次の整理のときにClaudeがタスクを作ります。すぐ作るなら会話で「knowkinの目的からタスクを作って」と頼んでください。');await load();return;}
     if(t.dataset.gapprove){await api('/api/goals/'+t.dataset.gapprove,{method:'PATCH',body:JSON.stringify({status:'active'})});setStatus('目的にしました。ネットワークに星として現れます。');await load();return;}
     if(t.dataset.greject){const k='gr'+t.dataset.greject;if(ui.armed!==k){ui.armed=k;render();return;}ui.armed=null;await api('/api/goals/'+t.dataset.greject,{method:'PATCH',body:JSON.stringify({status:'dropped'})});setStatus('候補を見送りました。');await load();return;}
+    if(t.dataset.ghide){const [id,h]=t.dataset.ghide.split('|');await api('/api/goals/'+id,{method:'PATCH',body:JSON.stringify({hidden:h==='1'})});
+      if(ui.tgoal===Number(id)&&h==='1')ui.tgoal=null;
+      setStatus(h==='1'?'目的を非表示にしました。「非表示の目的」からいつでも戻せます。':'目的を表示に戻しました。');await load();return;}
     if(t.dataset.gpin){const g=goalsAll().find(x=>x.id===Number(t.dataset.gpin));await api('/api/goals/'+g.id,{method:'PATCH',body:JSON.stringify({pinned:!g.pinned})});await load();return;}
     if(t.dataset.gstatus){const [id,st]=t.dataset.gstatus.split('|');await api('/api/goals/'+id,{method:'PATCH',body:JSON.stringify({status:st})});await load();return;}
     if(t.dataset.gdone){const k='gd'+t.dataset.gdone;if(ui.armed!==k){ui.armed=k;render();return;}ui.armed=null;await api('/api/goals/'+t.dataset.gdone,{method:'PATCH',body:JSON.stringify({status:'done'})});ui.view='goals';setStatus('おめでとうございます。目的を達成にしました。');await load();return;}

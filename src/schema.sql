@@ -171,6 +171,9 @@ ALTER TABLE units ADD COLUMN IF NOT EXISTS period TEXT NOT NULL DEFAULT '';   --
 -- 目的からタスクを作ってほしいという依頼
 ALTER TABLE goals ADD COLUMN IF NOT EXISTS task_request_at TIMESTAMPTZ;
 
+-- 目的を画面から隠す（2026-11-22 田中さん「目的を非表示にできるようにしたい」）。終わった・今は見たくない目的を消さずにしまっておける
+ALTER TABLE goals ADD COLUMN IF NOT EXISTS hidden BOOLEAN NOT NULL DEFAULT false;
+
 -- 脳の再現度テスト：Claudeが「あなたならこう答える」と予想し、本人が採点する
 CREATE TABLE IF NOT EXISTS brain_quiz (
   id           SERIAL PRIMARY KEY,
