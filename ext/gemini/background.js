@@ -30,6 +30,9 @@ async function retry() {
 chrome.runtime.onMessage.addListener((m) => {
   if (m && m.type === 'sweep-list') { if (sweeping) sweeping.ids = m.ids || []; return; }
   if (m && m.type === 'sweep-now') { sweep(); return; }
+  if (m && m.type === 'organize-now') { organize(); return; }
+  if (m && m.type === 'organize-ready') { if (organizing) organizing.ready = true; return; }
+  if (m && m.type === 'organize-answer') { if (organizing) organizing.answer = m; return; }
   if (!m || m.type !== 'turn') return;
   (async () => {
     if (await send(m)) { const { count = 0 } = await chrome.storage.local.get('count'); await chrome.storage.local.set({ count: count + 1 }); return; }
@@ -47,7 +50,7 @@ let sweeping = null;
 const wait = async (ms) => { for (let t = 0; t < ms; t += 1000) { await new Promise((r) => setTimeout(r, Math.min(1000, ms - t))); await chrome.runtime.getPlatformInfo(); } };
 async function sweep() {
   const { key, enabled = true, mobile = true } = await chrome.storage.local.get(['key', 'enabled', 'mobile']);
-  if (!key || !enabled || !mobile || sweeping) return;
+  if (!key || !enabled || !mobile || sweeping || organizing) return;
   sweeping = { tab: null, ids: null };
   try {
     const tab = await chrome.tabs.create({ url: 'https://gemini.google.com/app?knowkin_sweep=1', active: false, pinned: true });
@@ -80,3 +83,36 @@ async function selfUpdate() {
 }
 chrome.alarms?.create('self-update', { periodInMinutes: 10, delayInMinutes: 3 });
 chrome.alarms?.onAlarm.addListener((a) => { if (a.name === 'self-update') selfUpdate(); });
+
+// ---- Gemini に knowkin の整理をさせる：1時間ごと（2026-11-22 田中さん「1時間に1回、Gemini に整理させたい」）----
+//   ① knowkin から頼みごと（整理の決まり＋未整理メモ）をもらう ② 裏のタブで Gemini を開いて貼って送る
+//   ③ Gemini の答え（JSON）を knowkin に返して保存してもらう。Gemini の API は使わない。パソコンの Chrome が開いている間だけ動く
+let organizing = null;
+async function organize() {
+  const { key, organizeOn = true } = await chrome.storage.local.get(['key', 'organizeOn']);
+  if (!key || !organizeOn || organizing || sweeping) return;
+  organizing = { tab: null, ready: false, answer: null };
+  const done = async (r) => { await chrome.storage.local.set({ lastOrganize: { at: new Date().toLocaleString('ja-JP'), ...r } }); };
+  try {
+    const b = await (await fetch(`${KNOWKIN}/api/organize/batch`, { headers: { authorization: `Bearer ${key}` } })).json();
+    if (!b || !Array.isArray(b.batch) || !b.batch.length) { await done({ ok: true, note: '未整理のメモはありませんでした' }); return; }
+    const tab = await chrome.tabs.create({ url: 'https://gemini.google.com/app?knowkin_organize=1', active: false, pinned: true });
+    organizing.tab = tab.id;
+    for (let i = 0; i < 40 && !organizing.ready && !organizing.answer; i++) await wait(1000);
+    if (!organizing.ready) { await done({ ok: false, note: (organizing.answer && organizing.answer.error) || 'Gemini の画面が開けませんでした' }); return; }
+    await chrome.tabs.sendMessage(tab.id, { type: 'organize-prompt', prompt: b.prompt });
+    for (let i = 0; i < 400 && !organizing.answer; i++) await wait(1000);
+    const a = organizing.answer;
+    if (!a || !a.answer) { await done({ ok: false, note: (a && a.error) || '答えが返ってきませんでした' }); return; }
+    const r = await fetch(`${KNOWKIN}/api/organize/apply`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` }, body: JSON.stringify({ answer: a.answer, batch: b.batch }) });
+    const j = await r.json().catch(() => ({}));
+    await done(r.ok ? { ok: true, note: `${j.saved}件のメモを整理（記憶 ${j.added}件）` } : { ok: false, note: j.error || `保存できませんでした（${r.status}）` });
+  } catch (e) {
+    await done({ ok: false, note: String(e.message || e) });
+  } finally {
+    if (organizing && organizing.tab) chrome.tabs.remove(organizing.tab).catch(() => {});
+    organizing = null;
+  }
+}
+chrome.alarms?.create('organize', { periodInMinutes: 60, delayInMinutes: 5 });
+chrome.alarms?.onAlarm.addListener((a) => { if (a.name === 'organize') organize(); });
