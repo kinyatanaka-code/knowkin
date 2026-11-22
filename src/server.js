@@ -11,6 +11,7 @@ import { upstreamTools } from './upstream.js';
 import { buildExportFiles, buildExportText, exportConfig, exportToGitHub } from './github-export.js';
 import { buildExportTables } from './sheet-export.js';
 import { buildMeetingDocs, buildProposalLibrary, buildReport } from './report-export.js';
+import { skillMain, skillRules } from './skill-export.js';
 import { BUILD_TAG } from './build.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
@@ -230,6 +231,10 @@ api.get('/mcp-log', wrap(async (req, res) => res.json((await pool.query(
 api.get('/kinbot/status', wrap(async (req, res) => res.json(await kinbotStatus(req.uid))));
 api.post('/kinbot/sync', wrap(async (req, res) => res.json(await syncKinbot(req.uid, { maxPages: 4 }))));
 api.get('/export/text', wrap(async (req, res) => res.type('text/plain; charset=utf-8').send(await buildExportText(req.uid))));
+// Gemini のスキルの中身（gemini-skill/ から。Apps Script がドキュメントに書き、スキルが読む）
+api.get('/export/skill', wrap(async (req, res) => {
+  res.type('text/plain; charset=utf-8').send(req.query.part === 'rules' ? await skillRules() : await skillMain());
+}));
 // 提案資料ライブラリ（送った提案資料からベースを数えて作る）
 api.get('/export/proposals', wrap(async (req, res) => {
   try { res.type('text/plain; charset=utf-8').send(await buildProposalLibrary(req.uid)); } catch (e) { res.status(400).json({ error: e.message }); }
