@@ -25,7 +25,7 @@ const JOBS = {
   核: { read: [['get_core_material', {}]], write: ['save_core'] },
 };
 // チャットで本人に頼まれたときに、Gemini の答えから動かしてよい道具（消す道具は入れない）
-export const CHAT_TOOLS = ['update_task', 'propose_goal', 'update_goal_position', 'add_goal_tasks', 'request_job'];
+export const CHAT_TOOLS = ['update_task', 'propose_goal', 'update_goal_position', 'add_goal_tasks', 'request_job', 'save_work'];
 
 function tools(uid) {
   // ai に claude 以外を入れて、Claude 以外の AI 向けの小さい結果にする（Gemini の入力欄に入る大きさ）
@@ -115,10 +115,19 @@ export async function applyCalls(uid, answer, allowed) {
     if (!ok.has(name)) { results.push({ tool: name, ok: false, text: '許していない道具なので動かしませんでした' }); continue; }
     try {
       if (name === 'request_job') { const r = await requestJob(uid, c.args && c.args.job); results.push({ tool: name, ok: true, text: r }); continue; }
+      // 作ったものの全文を JSON に書き写すと長く・崩れやすいので、"@answer" なら答えそのもの（JSON のかたまりを除く）を全文にする
+      if (name === 'save_work' && c.args && c.args.content === '@answer') c.args.content = answerBody(raw);
       results.push({ tool: name, ok: true, text: (await callTool(reg, name, c.args || {})).slice(0, 300) });
     } catch (e) { results.push({ tool: name, ok: false, text: e.message.slice(0, 300) }); }
   }
   return results;
+}
+// 「私：…\n\nGemini：…\n\nURL」から、Gemini の答えだけ（knowkin_calls の JSON のかたまりを除く）を取り出す
+function answerBody(raw) {
+  let a = raw.includes('Gemini：') ? raw.slice(raw.indexOf('Gemini：') + 'Gemini：'.length) : raw;
+  a = a.replace(/\n\nhttps:\/\/gemini\.google\.com\S*\s*$/, '');
+  a = a.replace(/(```json\s*)?\{[\s\S]*"knowkin_calls"[\s\S]*\}(\s*```)?/, '');
+  return a.replace(/\n?JSON\s*$/i, '').trim();
 }
 export async function applyJob(uid, job, answer) {
   const def = JOBS[job];

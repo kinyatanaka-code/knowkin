@@ -15,6 +15,7 @@ import { skillMain, skillRules } from './skill-export.js';
 import { ORGANIZE_MARK, organizeApply, organizeBatch } from './organize.js';
 import { CHAT_TOOLS, applyCalls, applyJob, jobPrompt, nextJob, nowDoc, takeJobRequest } from './gemini-jobs.js';
 import { BUILD_TAG } from './build.js';
+import { getWorksByIds, listWorks, saveWork, workText } from './works.js';
 import { designDoc, pageImage, saveSlidesPdf, slidesNeeded, syncDeckDesigns } from './deck-design.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
@@ -312,6 +313,16 @@ api.post('/design/slides', express.json({ limit: '60mb' }), wrap(async (req, res
 // すぐ数えたいとき（ふだんは1時間ごと）
 api.post('/design/sync', wrap(async (req, res) => {
   try { res.json(await syncDeckDesigns(req.uid, { max: Math.min(5, Number(req.body?.max) || 3) })); } catch (e) { res.status(400).json({ error: e.message }); }
+}));
+// 作ったもの（Claude・Gemini が作った資料など）を Gemini に渡す。ids なし＝一覧（名前と更新の印だけ）、ids あり＝本文つき
+api.get('/export/works', wrap(async (req, res) => {
+  const ids = String(req.query.ids || '').split(',').map((x) => x.trim()).filter(Boolean).slice(0, 20);
+  if (ids.length) return res.json({ works: (await getWorksByIds(req.uid, ids)).map((w) => ({ id: w.id, ref: w.ref, title: w.title, updated: `${w.updated}#${w.version}`, text: workText(w) })) });
+  res.json({ works: (await listWorks(req.uid, { limit: 150 })).map((w) => ({ id: w.id, ref: w.ref, title: w.title, kind: w.kind, company: w.company, updated: `${w.updated}#${w.version}`, created: w.created })) });
+}));
+// 作ったものを直接残す（画面・ほかの道具から。AI からは save_work）
+api.post('/works', wrap(async (req, res) => {
+  try { res.json(await saveWork(req.uid, { ...(req.body || {}), ai: (req.body && req.body.ai) || null })); } catch (e) { res.status(400).json({ error: e.message }); }
 }));
 // 議事録を1件ずつ（Apps Script が1件1ドキュメントにして、Gemini が会社名で探して読めるようにする）
 api.get('/export/meetings', wrap(async (req, res) => {

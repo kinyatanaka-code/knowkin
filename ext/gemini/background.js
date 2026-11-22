@@ -6,7 +6,9 @@ const KNOWKIN = 'https://knowkin-production.up.railway.app';
 async function send(m) {
   const { key, enabled = true } = await chrome.storage.local.get(['key', 'enabled']);
   if (!enabled || !key) return false;
-  const text = `私：${m.q}\n\nGemini：${m.a.length > 6000 ? m.a.slice(0, 6000) + '…（長いので切りました）' : m.a}\n\n${m.url}`;
+  // ふだんは6,000字まで。knowkin_calls（作ったものを残す save_work など）が入っている答えは、全文が要るので切らない
+  const cap = m.a.includes('knowkin_calls') ? 300000 : 6000;
+  const text = `私：${m.q}\n\nGemini：${m.a.length > cap ? m.a.slice(0, cap) + '…（長いので切りました）' : m.a}\n\n${m.url}`;
   try {
     const r = await fetch(`${KNOWKIN}/api/memos`, {
       method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` },

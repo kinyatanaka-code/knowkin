@@ -89,6 +89,8 @@ const SERVER_INSTRUCTIONS = `knowkin は田中欽也の「第二の脳」です�
 - 提案資料は get_proposal_library（これまでの資料から数えたベース）と get_meeting_notes を材料に作る。見た目（色・字体・文字の大きさ・置き方・箱）は get_deck_design で、これまでの資料に合わせる
 - Salesforce の更新漏れ探し・まだ閉じていない商談の一覧は get_sf_open_deals
 - 分析・提案資料・お礼メールを作る前に get_writing_rules で決まりと完成例を読み、その形で書く
+- 本人に頼まれて作ったもの（提案資料・スライド・ドキュメント・メール・分析・表など）は、できあがったら save_work で全文を knowkin に渡す（Gemini でも続きを作れるように）。直したら同じ ref で保存し直す
+- 「前に作った〇〇の続き」は list_works で探し、get_work で全文を読んでから続ける
 - 記録にないことを事実のように言わない。1回に聞くのは1つだけ。返事は短く`;
 
 export function buildMcpServer(uid, { ai = '', upstream = [] } = {}) {
@@ -242,6 +244,47 @@ export function buildMcpServer(uid, { ai = '', upstream = [] } = {}) {
       return { content };
     } catch (e) { return { ...text(`見た目を読めませんでした：${e.message}`), isError: true }; }
   });
+  // ---- 作ったもの（2026-11-22 田中さん「クロードで作った資料も全部 knowkin に。Gemini でも続きを作れるように」）----
+  server.registerTool('save_work', {
+    title: '作ったものを knowkin に渡す',
+    description: '本人に頼まれて作ったもの（提案資料・スライド・ドキュメント・メール・分析・表・ページ）の全文を残す。別の AI（Gemini など）が続きを作れるように、できあがったら・直したら呼ぶ。スライドは1枚ずつ「見出し・本文・置き方・話すメモ」がわかる Markdown か、スライドのデータ（JSON）をそのまま。同じものの続き・直しは、前に返された ref をそのまま入れる（前の版は残る）。',
+    inputSchema: {
+      title: z.string().min(1).max(200).describe('名前（例：上伊那福祉協会 様 ご提案資料）'),
+      content: z.string().min(1).describe('作ったものの全文（省略しない）'),
+      kind: z.string().max(20).optional().describe('種類：提案資料・スライド・ドキュメント・メール・分析・表・ページ・そのほか'),
+      company: z.string().max(100).optional().describe('お客様の会社名（あれば）'),
+      format: z.string().max(20).optional().describe('形式：markdown・html・json・text など'),
+      url: z.string().max(500).optional().describe('元の場所（Claude のアーティファクト・Google ドキュメントなどの URL。あれば）'),
+      notes: z.string().max(4000).optional().describe('残っていること・続きで直すこと・確認事項'),
+      ref: z.string().max(150).optional().describe('続き・直しのときだけ、前に返された ref'),
+    },
+  }, async (args) => {
+    try {
+      const { saveWork } = await import('./works.js');
+      const r = await saveWork(uid, { ...args, ai: ai || null });
+      return text(`${r.unchanged ? '前と同じ中身なので変えませんでした' : r.updated ? `続きとして保存しました（版${r.version}・前の版も残っています）` : '保存しました'}。ref：${r.ref}（直すときはこの ref で save_work）`);
+    } catch (e) { return { ...text(`保存できませんでした：${e.message}`), isError: true }; }
+  });
+  server.registerTool('list_works', {
+    title: '作ったものの一覧',
+    description: 'これまで Claude・Gemini が作って knowkin に渡したもの（提案資料・ドキュメント・メール・分析など）の一覧（新しい順。ref・種類・会社・作ったAI・版・残っていること）。q で名前・会社・中身から探す。続きを作るときは get_work で全文を読む。',
+    inputSchema: { q: z.string().optional().describe('探す言葉（会社名など）'), limit: z.number().int().min(1).max(200).optional() },
+    annotations: { readOnlyHint: true },
+  }, async ({ q, limit }) => {
+    const { listWorks, worksIndex } = await import('./works.js');
+    return text(worksIndex(await listWorks(uid, { q, limit })));
+  });
+  server.registerTool('get_work', {
+    title: '作ったものの全文',
+    description: 'list_works の ref（か id）で、作ったものの全文と、残っていること・作ったAI・版を返す。続きを作る前に読む。',
+    inputSchema: { ref: z.string().min(1).describe('ref か id') },
+    annotations: { readOnlyHint: true },
+  }, async ({ ref }) => {
+    const { getWork, workText } = await import('./works.js');
+    const w = await getWork(uid, ref);
+    if (!w) return { ...text(`${ref} は見つかりませんでした（list_works で ref を確かめてください）`), isError: true };
+    return text(capText(workText(w), '残りは get_work では読めません。本人に元の場所を開いてもらってください'));
+  });
   server.registerTool('get_sf_open_deals', {
     title: 'Salesforce の進行中の商談',
     description: 'チームが持っている、まだ閉じていない Salesforce の商談を、人ごと・段階ごとに返す（会社・完了予定日・最終更新日・id）。完了予定日が過ぎたものに「★期限切れ」。SF の更新漏れ探しと、書きかえの依頼（sf_update の id）に使う。who に名前の一部を入れるとその人だけ。',
@@ -260,7 +303,7 @@ export function buildMcpServer(uid, { ai = '', upstream = [] } = {}) {
     inputSchema: { topic: z.enum(['全体', '分析', '提案資料', 'お礼メール']).describe('どの決まりを読むか') },
     annotations: { readOnlyHint: true },
   }, async ({ topic }) => {
-    if (topic === '全体') return text(capText('（コネクタで使うときの読みかえ：「kinbot 分析レポート」＝get_sales_report、「議事録 〇〇」＝get_meeting_notes、「文字起こし 〇〇」＝get_transcript、「kinbot 提案資料ライブラリ」＝get_proposal_library、「1 書き方の決まり」＝get_writing_rules、「knowkin 考え方の核」＝get_core、「最近の記録」＝search_memory、「Salesforce 進行中の商談」＝get_sf_open_deals、「kinbot 提案資料の見た目」＝get_deck_design）\n\n' + await skillMain(), ''));
+    if (topic === '全体') return text(capText('（コネクタで使うときの読みかえ：「kinbot 分析レポート」＝get_sales_report、「議事録 〇〇」＝get_meeting_notes、「文字起こし 〇〇」＝get_transcript、「kinbot 提案資料ライブラリ」＝get_proposal_library、「1 書き方の決まり」＝get_writing_rules、「knowkin 考え方の核」＝get_core、「最近の記録」＝search_memory、「Salesforce 進行中の商談」＝get_sf_open_deals、「kinbot 提案資料の見た目」＝get_deck_design、「作ったもの 〇〇」＝list_works・get_work、作ったものを残す＝save_work）\n\n' + await skillMain(), ''));
     const parts = await skillRuleParts();
     return text(capText(parts.filter((p) => p.title.startsWith(topic)).map((p) => p.text).join('\n\n') || '見つかりませんでした。', '残りは完成例です'));
   });
