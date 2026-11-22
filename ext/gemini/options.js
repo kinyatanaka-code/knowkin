@@ -8,12 +8,12 @@
   $('mobile').checked = s.mobile !== false;
   $('organizeOn').checked = s.organizeOn !== false;
   const show = (t, ok) => { $('st').textContent = t; $('st').className = `st ${ok ? 'ok' : 'ng'}`; };
-  if (s.last) show(`前に送ったとき：${s.last.at}　${s.last.ok ? '送れました' : `送れませんでした（${s.last.status}）`}\nこれまでに送った数：${s.count || 0}${(s.queue || []).length ? `\nまだ送れていない数：${s.queue.length}（5分ごとに送り直します）` : ''}${s.lastOrganize ? `\nGemini で前に整理したとき：${s.lastOrganize.at}（${s.lastOrganize.note}）` : ''}${s.lastSweep ? `\nスマホの会話を前に拾ったとき：${s.lastSweep.at}（${s.lastSweep.err ? `うまくいきませんでした：${s.lastSweep.err}` : `最近の会話 ${s.lastSweep.n} 件を見ました`}）` : ''}`, s.last.ok);
+  if (s.last) show(`前に送ったとき：${s.last.at}　${s.last.ok ? '送れました' : `送れませんでした（${s.last.status}）`}\nこれまでに送った数：${s.count || 0}${(s.queue || []).length ? `\nまだ送れていない数：${s.queue.length}（5分ごとに送り直します）` : ''}${s.lastOrganize ? `\nGemini で前に手入れしたとき：${s.lastOrganize.at}（${s.lastOrganize.note}）` : ''}${s.lastSweep ? `\nスマホの会話を前に拾ったとき：${s.lastSweep.at}（${s.lastSweep.err ? `うまくいきませんでした：${s.lastSweep.err}` : `最近の会話 ${s.lastSweep.n} 件を見ました`}）` : ''}`, s.last.ok);
   else if (!s.key) show('連携キーを貼って「保存する」を押してください。', false);
   $('save').addEventListener('click', async () => {
     await chrome.storage.local.set({ key: $('key').value.trim(), enabled: $('enabled').checked, mobile: $('mobile').checked, organizeOn: $('organizeOn').checked });
     show($('enabled').checked ? '保存しました。Gemini の画面を開き直すと残り始めます。' : '保存しました。いまは残しません。', true);
   });
-  $('orgNow').addEventListener('click', () => { chrome.runtime.sendMessage({ type: 'organize-now' }); show('裏のタブで Gemini に整理させています（数分）。終わったらタブは自動で閉じ、この画面を開き直すと結果が出ます。', true); });
+  $('orgNow').addEventListener('click', () => { chrome.runtime.sendMessage({ type: 'organize-now' }); show('裏のタブで Gemini に手入れをさせています（1つ数分・最大5つ）。終わったらタブは自動で閉じ、この画面を開き直すと結果が出ます。', true); });
   $('now').addEventListener('click', () => { chrome.runtime.sendMessage({ type: 'sweep-now' }); show('裏のタブで最近の会話を読んでいます（2分ほど）。終わったらタブは自動で閉じます。', true); });
 })();

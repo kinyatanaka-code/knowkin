@@ -50,7 +50,7 @@ let sweeping = null;
 const wait = async (ms) => { for (let t = 0; t < ms; t += 1000) { await new Promise((r) => setTimeout(r, Math.min(1000, ms - t))); await chrome.runtime.getPlatformInfo(); } };
 async function sweep() {
   const { key, enabled = true, mobile = true } = await chrome.storage.local.get(['key', 'enabled', 'mobile']);
-  if (!key || !enabled || !mobile || sweeping || organizing) return;
+  if (!key || !enabled || !mobile || sweeping || organizing || jobsRunning) return;
   sweeping = { tab: null, ids: null };
   try {
     const tab = await chrome.tabs.create({ url: 'https://gemini.google.com/app?knowkin_sweep=1', active: false, pinned: true });
@@ -84,35 +84,59 @@ async function selfUpdate() {
 chrome.alarms?.create('self-update', { periodInMinutes: 10, delayInMinutes: 3 });
 chrome.alarms?.onAlarm.addListener((a) => { if (a.name === 'self-update') selfUpdate(); });
 
-// ---- Gemini に knowkin の整理をさせる：1時間ごと（2026-11-22 田中さん「1時間に1回、Gemini に整理させたい」）----
-//   ① knowkin から頼みごと（整理の決まり＋未整理メモ）をもらう ② 裏のタブで Gemini を開いて貼って送る
-//   ③ Gemini の答え（JSON）を knowkin に返して保存してもらう。Gemini の API は使わない。パソコンの Chrome が開いている間だけ動く
+// ---- Gemini に knowkin の手入れをさせる：1時間ごと・頼まれたとき（2026-11-22 田中さん「整理・核・成長・タスク・目的を Gemini でも」）----
+//   knowkin が「いまやるべき手入れ」（整理・仕分け・置き場所・引き出し・目的のタスク・再現度テスト・核）を1つずつ出すので、
+//   ① 頼みごとをもらう ② 裏のタブで新しい Gemini の会話を開いて貼って送る ③ 答えの JSON を knowkin に返して動かしてもらう、を
+//   1回に5つまで続ける。Gemini の API は使わない。パソコンの Chrome が開いている間だけ動く
 let organizing = null;
-async function organize() {
-  const { key, organizeOn = true } = await chrome.storage.local.get(['key', 'organizeOn']);
-  if (!key || !organizeOn || organizing || sweeping) return;
+async function runJob(key, job, prompt) {
   organizing = { tab: null, ready: false, answer: null };
-  const done = async (r) => { await chrome.storage.local.set({ lastOrganize: { at: new Date().toLocaleString('ja-JP'), ...r } }); };
   try {
-    const b = await (await fetch(`${KNOWKIN}/api/organize/batch`, { headers: { authorization: `Bearer ${key}` } })).json();
-    if (!b || !Array.isArray(b.batch) || !b.batch.length) { await done({ ok: true, note: '未整理のメモはありませんでした' }); return; }
     const tab = await chrome.tabs.create({ url: 'https://gemini.google.com/app?knowkin_organize=1', active: false, pinned: true });
     organizing.tab = tab.id;
     for (let i = 0; i < 40 && !organizing.ready && !organizing.answer; i++) await wait(1000);
-    if (!organizing.ready) { await done({ ok: false, note: (organizing.answer && organizing.answer.error) || 'Gemini の画面が開けませんでした' }); return; }
-    await chrome.tabs.sendMessage(tab.id, { type: 'organize-prompt', prompt: b.prompt });
+    if (!organizing.ready) return { ok: false, note: (organizing.answer && organizing.answer.error) || 'Gemini の画面が開けませんでした' };
+    await chrome.tabs.sendMessage(tab.id, { type: 'organize-prompt', prompt });
     for (let i = 0; i < 400 && !organizing.answer; i++) await wait(1000);
     const a = organizing.answer;
-    if (!a || !a.answer) { await done({ ok: false, note: (a && a.error) || '答えが返ってきませんでした' }); return; }
-    const r = await fetch(`${KNOWKIN}/api/organize/apply`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` }, body: JSON.stringify({ answer: a.answer, batch: b.batch }) });
+    if (!a || !a.answer) return { ok: false, note: (a && a.error) || '答えが返ってきませんでした' };
+    const r = await fetch(`${KNOWKIN}/api/gemini-jobs/apply`, { method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${key}` }, body: JSON.stringify({ job, answer: a.answer }) });
     const j = await r.json().catch(() => ({}));
-    await done(r.ok ? { ok: true, note: `${j.saved}件のメモを整理（記憶 ${j.added}件）` } : { ok: false, note: j.error || `保存できませんでした（${r.status}）` });
-  } catch (e) {
-    await done({ ok: false, note: String(e.message || e) });
+    if (!r.ok) return { ok: false, note: j.error || `保存できませんでした（${r.status}）` };
+    const okN = (j.results || []).filter((x) => x.ok).length;
+    return { ok: okN > 0, note: `${okN}/${(j.results || []).length}件` };
   } finally {
     if (organizing && organizing.tab) chrome.tabs.remove(organizing.tab).catch(() => {});
     organizing = null;
   }
 }
+let jobsRunning = false;
+async function organize() {
+  const { key, organizeOn = true } = await chrome.storage.local.get(['key', 'organizeOn']);
+  if (!key || !organizeOn || jobsRunning || sweeping) return;
+  jobsRunning = true;
+  const done = [], log = [];
+  try {
+    for (let n = 0; n < 5; n++) {
+      const nx = await (await fetch(`${KNOWKIN}/api/gemini-jobs/next?skip=${encodeURIComponent(done.join(','))}`, { headers: { authorization: `Bearer ${key}` } })).json();
+      if (!nx || !nx.job) break;
+      const r = await runJob(key, nx.job, nx.prompt);
+      log.push(`${nx.job}：${r.ok ? 'できた' : 'できなかった'}（${r.note}）`);
+      // 整理は未整理が残っていれば続けてよい。ほかは1回ずつ
+      if (nx.job !== '整理' || !r.ok) done.push(nx.job);
+    }
+    await chrome.storage.local.set({ lastOrganize: { at: new Date().toLocaleString('ja-JP'), ok: true, note: log.length ? log.join(' / ') : 'やることはありませんでした' } });
+  } catch (e) {
+    await chrome.storage.local.set({ lastOrganize: { at: new Date().toLocaleString('ja-JP'), ok: false, note: [...log, String(e.message || e)].join(' / ') } });
+  } finally { jobsRunning = false; }
+}
+// チャットで「整理」「核」と頼まれたか、2分ごとに knowkin に聞く（頼まれていればすぐ始める）
+async function checkRequested() {
+  const { key, organizeOn = true } = await chrome.storage.local.get(['key', 'organizeOn']);
+  if (!key || !organizeOn || jobsRunning) return;
+  try { const r = await (await fetch(`${KNOWKIN}/api/gemini-jobs/requested`, { headers: { authorization: `Bearer ${key}` } })).json(); if (r && r.requested) organize(); } catch {}
+}
+chrome.alarms?.create('job-request', { periodInMinutes: 2, delayInMinutes: 1 });
+chrome.alarms?.onAlarm.addListener((a) => { if (a.name === 'job-request') checkRequested(); });
 chrome.alarms?.create('organize', { periodInMinutes: 60, delayInMinutes: 5 });
 chrome.alarms?.onAlarm.addListener((a) => { if (a.name === 'organize') organize(); });
