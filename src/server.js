@@ -15,6 +15,7 @@ import { skillMain, skillRules } from './skill-export.js';
 import { ORGANIZE_MARK, organizeApply, organizeBatch } from './organize.js';
 import { CHAT_TOOLS, applyCalls, applyJob, jobPrompt, nextJob, nowDoc, takeJobRequest } from './gemini-jobs.js';
 import { BUILD_TAG } from './build.js';
+import { designDoc, pageImage, saveSlidesPdf, slidesNeeded, syncDeckDesigns } from './deck-design.js';
 import { apiKeyEnv, provider, model, aiEnabled } from './ai.js';
 import {
   addMemo, addPhoto, addTask, addVoice, requestCore, classifyMemoById, getPhoto, mergeCategory, updateCategory, deleteUnit, getState, growCore, growCoresIfChanged, updateUnit, coreText, getCore, getOpenTasks, getMemo, AI_SOURCES,
@@ -47,7 +48,9 @@ app.post('/line/webhook', express.raw({ type: '*/*', limit: '2mb' }), (req, res)
   try { body = JSON.parse(raw.toString('utf8')); } catch { return; }
   handleEvents(body.events).catch((e) => console.error('LINE', e));
 });
-app.use(express.json({ limit: '5mb' }));
+// Google スライドの PDF を受け取る入口だけは大きいので、ふつうの読み取り（5MB まで）を通さない
+const json5 = express.json({ limit: '5mb' });
+app.use((req, res, next) => (req.path === '/api/design/slides' ? next() : json5(req, res, next)));
 const dir = path.dirname(fileURLToPath(import.meta.url));
 app.use(express.static(path.join(dir, '..', 'public')));
 app.get('/health', (_req, res) => res.json({ ok: true, build: BUILD_TAG }));
@@ -285,6 +288,31 @@ api.get('/export/sf-open', wrap(async (req, res) => {
 api.get('/export/proposals', wrap(async (req, res) => {
   try { res.type('text/plain; charset=utf-8').send(await buildProposalLibrary(req.uid)); } catch (e) { res.status(400).json({ error: e.message }); }
 }));
+// 提案資料の見た目（色・字体・文字の大きさ・置き方・箱などの部品。2026-11-22）
+//   images=1 のときは、絵を入れる場所に [[絵:ref#page]] の印を入れる（Apps Script がそこに絵を差し込む）
+api.get('/export/design', wrap(async (req, res) => {
+  try { res.type('text/plain; charset=utf-8').send((await designDoc(req.uid, { withImages: req.query.images === '1' })).text); } catch (e) { res.status(400).json({ error: e.message }); }
+}));
+api.get('/design/image', wrap(async (req, res) => {
+  const img = await pageImage(req.uid, String(req.query.ref || ''), Number(req.query.page) || 1);
+  if (!img) return res.status(404).json({ error: 'その資料のページの絵はまだありません' });
+  res.type('image/jpeg').set('Cache-Control', 'private, max-age=3600').send(Buffer.from(img));
+}));
+// Google スライドは knowkin から開けないので、Apps Script が PDF にして送ってくる
+api.get('/design/slides-needed', wrap(async (req, res) => {
+  try { res.json({ slides: await slidesNeeded(req.uid) }); } catch (e) { res.status(400).json({ error: e.message }); }
+}));
+//   数えるのに時間がかかる（Apps Script は待てる時間が短い）ので、受け取ったらすぐ返事をして、あとで数える
+api.post('/design/slides', express.json({ limit: '60mb' }), wrap(async (req, res) => {
+  const b = req.body || {};
+  if (!b.file_id) return res.status(400).json({ error: 'file_id がありません' });
+  saveSlidesPdf(req.uid, b).then((r) => console.log('slides design', r.ref, r.pages || r.error)).catch((e) => console.error('slides design failed', e.message));
+  res.json({ ok: true, queued: true });
+}));
+// すぐ数えたいとき（ふだんは1時間ごと）
+api.post('/design/sync', wrap(async (req, res) => {
+  try { res.json(await syncDeckDesigns(req.uid, { max: Math.min(5, Number(req.body?.max) || 3) })); } catch (e) { res.status(400).json({ error: e.message }); }
+}));
 // 議事録を1件ずつ（Apps Script が1件1ドキュメントにして、Gemini が会社名で探して読めるようにする）
 api.get('/export/meetings', wrap(async (req, res) => {
   try {
@@ -508,6 +536,11 @@ cron.schedule('40 * * * *', async () => {
 cron.schedule('15 * * * *', async () => {
   try { const u = await firstUser(); if (u) console.log('kinbot sync', JSON.stringify(await syncKinbot(u.id))); }
   catch (e) { console.error('kinbot sync failed', e); }
+}, { timezone: 'Asia/Tokyo' });
+// 提案資料の見た目を数える：毎時25分に3件ずつ（AI は使わない。サーバーの中で絵にして数えるだけ）
+cron.schedule('25 * * * *', async () => {
+  try { const u = await firstUser(); if (u) { const r = await syncDeckDesigns(u.id); if (r.done?.length) console.log('deck design', JSON.stringify(r)); } }
+  catch (e) { console.error('deck design failed', e.message); }
 }, { timezone: 'Asia/Tokyo' });
 cron.schedule('50 23 * * *', () => { snapshotGoals().catch((e) => console.error('goal snapshot failed', e)); }, { timezone: 'Asia/Tokyo' });
 

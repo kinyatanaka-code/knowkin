@@ -86,7 +86,7 @@ const SERVER_INSTRUCTIONS = `knowkin は田中欽也の「第二の脳」です�
 - 架電・アポ・稼働は kincall_ で始まる道具、商談・案件・Salesforce は kinbot_ で始まる道具、DOCの導入企業・候補者の質問は kinxs_ で始まる道具で、その場の数字を調べられる
 - 商談・アポ・架電の数や率・人ごとの比較は get_sales_report（knowkin が全件を数えた結果。自分で数え直さない）
 - 特定の会社の打ち合わせ（お礼メール・商談準備）は get_meeting_notes、お客様の実際の言葉は get_transcript
-- 提案資料は get_proposal_library（これまでの資料から数えたベース）と get_meeting_notes を材料に作る
+- 提案資料は get_proposal_library（これまでの資料から数えたベース）と get_meeting_notes を材料に作る。見た目（色・字体・文字の大きさ・置き方・箱）は get_deck_design で、これまでの資料に合わせる
 - Salesforce の更新漏れ探し・まだ閉じていない商談の一覧は get_sf_open_deals
 - 分析・提案資料・お礼メールを作る前に get_writing_rules で決まりと完成例を読み、その形で書く
 - 記録にないことを事実のように言わない。1回に聞くのは1つだけ。返事は短く`;
@@ -214,6 +214,34 @@ export function buildMcpServer(uid, { ai = '', upstream = [] } = {}) {
     try { return text(capText(pickSection(await buildProposalLibrary(uid), section ? String(section).trim() : ''), 'section に節の番号を入れて読んでください')); }
     catch (e) { return { ...text(`ライブラリを作れませんでした：${e.message}`), isError: true }; }
   });
+  server.registerTool('get_deck_design', {
+    title: '提案資料の見た目（デザインの部品）',
+    description: 'これまでの提案資料（kinbot の PDF・登録した Google スライド）を1ページずつ絵にして数えた見た目の部品。ref を省くと、みんなの型（よく使う色・字体・文字の大きさ・見出しの位置・余白・箱）とページの種類ごとの作り・資料ごとの型と ref の一覧。ref（例 pdf:12）を入れるとその資料の全ページの部品（色は #rrggbb、位置と大きさはページ左上からの %）。page も入れると、そのページの部品の JSON と絵（images=true のとき）。',
+    inputSchema: {
+      ref: z.string().optional().describe('資料の ref（例 pdf:12、slides:ファイルID）。省略で全体の型'),
+      page: z.number().int().optional().describe('ページ番号'),
+      images: z.boolean().optional().describe('絵も見るか（ref と一緒に。page を省くと最大6ページ）'),
+    },
+    annotations: { readOnlyHint: true },
+  }, async ({ ref, page, images }) => {
+    try {
+      const dd = await import('./deck-design.js');
+      if (!ref) {
+        const { text: t } = await dd.designDoc(uid);
+        const list = (await dd.listDecks(uid, 40)).map((d) => `- ${d.ref}：${d.name}（${d.day || ''}・${d.company || ''}${d.error ? `・読めなかった：${d.error}` : `・${d.pages}ページ`}）`).join('\n');
+        return text(capText(`${t}\n\n## 資料の ref\n${list || 'まだありません'}`, 'ref を入れて1つずつ読んでください'));
+      }
+      const pages = await dd.deckPages(uid, ref);
+      if (!pages.length) return { ...text(`${ref} の見た目はまだありません（1時間に3件ずつ数えています）`), isError: true };
+      const pick = page ? pages.filter((p) => p.page === page) : pages;
+      const content = [{ type: 'text', text: capText(page ? JSON.stringify(pick[0]?.design || null, null, 1) : pick.map((p) => dd.pageLine(p.design)).join('\n'), 'page を入れて1ページずつ読んでください') }];
+      if (images) for (const p of pick.slice(0, page ? 1 : 6)) {
+        const img = await dd.pageImage(uid, ref, p.page);
+        if (img) content.push({ type: 'image', data: Buffer.from(img).toString('base64'), mimeType: 'image/jpeg' });
+      }
+      return { content };
+    } catch (e) { return { ...text(`見た目を読めませんでした：${e.message}`), isError: true }; }
+  });
   server.registerTool('get_sf_open_deals', {
     title: 'Salesforce の進行中の商談',
     description: 'チームが持っている、まだ閉じていない Salesforce の商談を、人ごと・段階ごとに返す（会社・完了予定日・最終更新日・id）。完了予定日が過ぎたものに「★期限切れ」。SF の更新漏れ探しと、書きかえの依頼（sf_update の id）に使う。who に名前の一部を入れるとその人だけ。',
@@ -232,7 +260,7 @@ export function buildMcpServer(uid, { ai = '', upstream = [] } = {}) {
     inputSchema: { topic: z.enum(['全体', '分析', '提案資料', 'お礼メール']).describe('どの決まりを読むか') },
     annotations: { readOnlyHint: true },
   }, async ({ topic }) => {
-    if (topic === '全体') return text(capText('（コネクタで使うときの読みかえ：「kinbot 分析レポート」＝get_sales_report、「議事録 〇〇」＝get_meeting_notes、「文字起こし 〇〇」＝get_transcript、「kinbot 提案資料ライブラリ」＝get_proposal_library、「1 書き方の決まり」＝get_writing_rules、「knowkin 考え方の核」＝get_core、「最近の記録」＝search_memory、「Salesforce 進行中の商談」＝get_sf_open_deals）\n\n' + await skillMain(), ''));
+    if (topic === '全体') return text(capText('（コネクタで使うときの読みかえ：「kinbot 分析レポート」＝get_sales_report、「議事録 〇〇」＝get_meeting_notes、「文字起こし 〇〇」＝get_transcript、「kinbot 提案資料ライブラリ」＝get_proposal_library、「1 書き方の決まり」＝get_writing_rules、「knowkin 考え方の核」＝get_core、「最近の記録」＝search_memory、「Salesforce 進行中の商談」＝get_sf_open_deals、「kinbot 提案資料の見た目」＝get_deck_design）\n\n' + await skillMain(), ''));
     const parts = await skillRuleParts();
     return text(capText(parts.filter((p) => p.title.startsWith(topic)).map((p) => p.text).join('\n\n') || '見つかりませんでした。', '残りは完成例です'));
   });

@@ -184,7 +184,7 @@ export async function buildProposalLibrary(uid) {
     const names = [...String(d.companies || '').split('・'), String(d.name || '').replace(/【[^】]*】/g, '').replace(/(御中|様|ご?提案資料|御提案資料|\.pdf|\.pptx)/g, '').trim()].map((x) => x.normalize('NFKC').trim()).filter(Boolean);
     d.pages.forEach((p) => {
       const k = normTitle(p.text, names); if (!k || k.length < 3 || seen.has(k)) return; seen.add(k);
-      const o = by.get(k) || { k, n: 0, pos: [], texts: new Set(), sec: 0, sample: p.text };
+      const o = by.get(k) || { k, n: 0, pos: [], texts: new Set(), sec: 0, sample: p.text, at: `pdf:${d.id}#${p.page}` };
       o.n++; o.pos.push(p.page / d.pages.length); o.texts.add(String(p.text).normalize('NFKC').replace(/\s+/g, '')); o.sec += p.seconds || 0; by.set(k, o);
     });
   }
@@ -193,8 +193,11 @@ export async function buildProposalLibrary(uid) {
   const base = [...by.values()].filter((o) => o.n >= minN).sort((a, b) => med(a.pos) - med(b.pos));
   out.push('## 1. ベース（よく使われるページの流れ）', '', sent.length < 2 ? '送った提案資料がまだ少ないので、ベースはまだ作れない（2件以上で作り始める）。' :
     `送った提案資料の3割以上（${minN}件以上）に出てくるページを、資料の中の位置の順に並べたもの。「変えない」＝どの資料でもほぼ同じ中身、「会社ごと」＝資料ごとに中身が変わる。`, '');
-  if (base.length) out.push(table(['順', 'ページ（書き出し）', '使われた資料', '中身', '見られた秒数（合計）', '例'],
-    base.map((o, i) => [i + 1, o.k, `${o.n}/${sent.length}`, o.texts.size / o.n <= 0.35 ? '変えない' : '会社ごと', o.sec, cut(o.sample, 60)])), '');
+  // 見た目（色・見出しの位置・箱など）は、数え終わったページだけ付く（knowkin が1時間に3件ずつ絵にして数える）
+  let looks = new Map();
+  try { const dd = await import('./deck-design.js'); const m = await dd.designsFor(uid, base.map((o) => o.at)); looks = new Map([...m].map(([k, v]) => [k, dd.pageLine(v).replace(/^p\d+ /, '')])); } catch { /* 見た目がまだなくても、ベースは出す */ }
+  if (base.length) out.push(table(['順', 'ページ（書き出し）', '使われた資料', '中身', '見られた秒数（合計）', '例', '見た目（例のページ）'],
+    base.map((o, i) => [i + 1, o.k, `${o.n}/${sent.length}`, o.texts.size / o.n <= 0.35 ? '変えない' : '会社ごと', o.sec, cut(o.sample, 60), looks.get(o.at) || 'まだ数えていない'])), '');
   // 2. よく読まれるページ（1つの資料あたりの秒数が長い順）
   const read = [...by.values()].filter((o) => o.n >= 2 && o.sec > 0).map((o) => ({ ...o, avg: Math.round(o.sec / o.n) })).sort((a, b) => b.avg - a.avg).slice(0, 12);
   out.push('## 2. よく読まれるページ（お客様が長く見たページ）', '', read.length ? table(['ページ（書き出し）', '資料1件あたりの秒数', '使われた資料'], read.map((o) => [o.k, o.avg, o.n])) : 'まだ数えられるほど閲覧がない。', '');
@@ -212,6 +215,7 @@ export async function buildProposalLibrary(uid) {
       s.slide_url ? `URL：${s.slide_url}` : '', s.summary ? `要約：${cut(s.summary, 200)}` : '', cut(s.extracted_text, 700), '');
   }
   if (!(lib.slides || []).length) out.push('まだ登録がない（kinbot の案件の画面で、提案に使った Google スライドを登録するとここに増える）。', '');
+  out.push('## 5. 見た目（デザインの部品）', '', '色・字体・文字の大きさ・見出しの位置・余白・箱（カード）・線・画像の場所は、ドキュメント「kinbot 提案資料の見た目」（コネクタでは get_deck_design）にある。新しい資料はそこの「みんなの型」に合わせる。', '');
   return out.join('\n');
 }
 async function callUpstreamJson(tool, args) {
